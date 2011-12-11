@@ -42,12 +42,13 @@
     //zaklenjeno na kinectu
 
 #include "SceneDrawer.h"
-#include <GL/glut.h>
-#include <GL/glu.h>
-#include <GL/gl.h>
-#include <cv.h>
-#include <highgui.h>
-#include <cxcore.h>
+#include <glut.h>
+#include <glu.h>
+#include <gl.h>
+//#include <opencv.hpp>
+//#include <cv.h>
+//#include <highgui.h>
+//#include <cxcore.h>
 #include <stdio.h>
 #include <string>
 #include <map>
@@ -613,9 +614,9 @@ XnRGB24Pixel* g_pTexMap = NULL;
 unsigned int g_nTexMapX = 0;
 unsigned int g_nTexMapY = 0;
 
-cv::VideoCapture cap;
-cv::Mat frame;
-cv::Size size;
+//cv::VideoCapture cap;
+//cv::Mat frame;
+//cv::Size size;
 GLuint cameraImageTextureID;
 
 XnPoint3D headpos;
@@ -637,7 +638,7 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         g_pTexMapInit = true;
     
         // init camera and its texture
-        cap.open(0);
+        /*cap.open(0);
         cap >> frame;
         if(frame.data) {
             printf("%dx%d\n", frame.cols, frame.rows);
@@ -653,7 +654,7 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
 
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
             glDisable(GL_TEXTURE_RECTANGLE_ARB);
-        }
+        }*/
         
         // init head position
         headpos.X = 0;
@@ -672,9 +673,9 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
     int width = 640, height = 480;
     
     // render head-camera
-    cap >> frame;
+    //cap >> frame;
 
-    if(frame.data) {
+    /*if(frame.data) {
         size = frame.size();
 
         // set 2D viewpoint for head-camera view
@@ -741,110 +742,14 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
               headpos.X,headpos.Y,headpos.Z-10, // look-at vector
               0.0,-1.0,0.0);                    // up vector 
     /*} else {
-        gluLookAt(900.0,0.0,900.0, // camera position
-                  0.0,0.0,0.0,     // look-at vector
-                  0.0,-1.0,0.0);   // up vector 
+        gluLookAt(900.0,0.0,900.0,
+                  0.0,0.0,0.0,
+                  0.0,-1.0,0.0);
+        glRotatef(rot,0,1,0);
+        if(g_bRotate) rot += 1.0;
     }*/
     
-    /*glRotatef(rot,0,1,0);
-    if(g_bRotate) {
-      rot += 1.0;
-    }*/
 
-    /*
-    if(g_bDrawPixels) {
-        // kinect camera
-        {
-            const XnRGB24Pixel* pImageRow = imd.RGB24Data();
-            XnRGB24Pixel* pTexRow = g_pTexMap + imd.YOffset() * g_nTexMapX;
-
-            for(XnUInt y = 0; y < imd.YRes(); ++y) {
-                const XnRGB24Pixel* pImage = pImageRow;
-                XnRGB24Pixel* pTex = pTexRow + imd.XOffset();
-
-                for(XnUInt x = 0; x < imd.XRes(); ++x, ++pImage, ++pTex) {
-                    *pTex = *pImage;
-                }
-
-                pImageRow += imd.XRes();
-                pTexRow += g_nTexMapX;
-            }
-        }
-        // kinect depth
-        {
-            // Calculate the accumulative histogram (the yellow display...)
-            xnOSMemSet(g_pDepthHist, 0, MAX_DEPTH*sizeof(float));
-
-            unsigned int nNumberOfPoints = 0;
-            for(XnUInt y = 0; y < dmd.YRes(); ++y) {
-                for(XnUInt x = 0; x < dmd.XRes(); ++x, ++pDepth) {
-                    if(*pDepth != 0) {
-                        g_pDepthHist[*pDepth]++;
-                        nNumberOfPoints++;
-                    }
-                }
-            }
-            for(int nIndex=1; nIndex<MAX_DEPTH; nIndex++) {
-                g_pDepthHist[nIndex] += g_pDepthHist[nIndex-1];
-            }
-            if(nNumberOfPoints) {
-                for(int nIndex=1; nIndex<MAX_DEPTH; nIndex++) {
-                    g_pDepthHist[nIndex] = (unsigned int)(256 * (1.0f - (g_pDepthHist[nIndex] / nNumberOfPoints)));
-                }
-            }
-
-            xnOSMemSet(g_pTexMap, 0, g_nTexMapX*g_nTexMapY*sizeof(XnRGB24Pixel));
-            
-            const XnDepthPixel* pDepthRow = dmd.Data();
-            XnRGB24Pixel* pTexRow = g_pTexMap + dmd.YOffset() * g_nTexMapX;
-
-            for(XnUInt y = 0; y < dmd.YRes(); ++y) {
-                const XnDepthPixel* pDepth = pDepthRow;
-                XnRGB24Pixel* pTex = pTexRow + dmd.XOffset();
-
-                for(XnUInt x = 0; x < dmd.XRes(); ++x, ++pDepth, ++pTex) {
-                    if(*pDepth != 0) {
-                        int nHistValue = g_pDepthHist[*pDepth];
-                        pTex->nRed = (pTex->nRed+nHistValue)/2;
-                        pTex->nGreen = (pTex->nGreen+nHistValue)/2;
-                        pTex->nBlue = (pTex->nBlue+nHistValue)/2;
-                    }
-                }
-
-                pDepthRow += dmd.XRes();
-                pTexRow += g_nTexMapX;
-            }
-        }
-        /*
-        // Create the OpenGL texture map
-        glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_nTexMapX, g_nTexMapY, 0, GL_RGB, GL_UNSIGNED_BYTE, g_pTexMap);
-
-        // Display the OpenGL texture map
-        glColor4f(1,1,1,1);
-
-        glBegin(GL_QUADS);
-
-        int nXRes = dmd.FullXRes();
-        int nYRes = dmd.FullYRes();
-
-        // upper left
-        glTexCoord2f(0, 0);
-        glVertex2f(0, 0);
-        // upper right
-        glTexCoord2f((float)nXRes/(float)g_nTexMapX, 0);
-        glVertex2f(width, 0);
-        // bottom right
-        glTexCoord2f((float)nXRes/(float)g_nTexMapX, (float)nYRes/(float)g_nTexMapY);
-        glVertex2f(width, height);
-        // bottom left
-        glTexCoord2f(0, (float)nYRes/(float)g_nTexMapY);
-        glVertex2f(0, height);
-
-        glEnd();
-    } */ //g_bDrawPixels
 
     if(g_bClear) {
         g_bClear = false;
@@ -875,9 +780,9 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
 
         if(joint.fConfidence > 0 && drawing==false && ((g_bUseMouse==true && g_bMouseDown==true) 
         ||(g_bUseMouse==false &&  
-           abs(lastPosition.X-currentPosition.X) + 
-           abs(lastPosition.Y-currentPosition.Y) + 
-           abs(lastPosition.Z-currentPosition.Z)/15 > 35))) { // && currentPosition.Z < headpos.Z
+           fabs(lastPosition.X-currentPosition.X) + 
+           fabs(lastPosition.Y-currentPosition.Y) + 
+           fabs(lastPosition.Z-currentPosition.Z)/15 > 35))) { // && currentPosition.Z < headpos.Z
             
             //start new line
             drawing = true;
@@ -892,9 +797,9 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
             printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(),lastPosition.X,lastPosition.Y,lastPosition.Z);
         } else if(joint.fConfidence > 0 && drawing==true && ((g_bUseMouse==true && g_bMouseDown==false) 
                ||(g_bUseMouse==false &&
-                  abs(lastPosition.X-currentPosition.X) + 
-                  abs(lastPosition.Y-currentPosition.Y) + 
-                  abs(lastPosition.Z-currentPosition.Z) < 20))) {
+                  fabs(lastPosition.X-currentPosition.X) + 
+                  fabs(lastPosition.Y-currentPosition.Y) + 
+                  fabs(lastPosition.Z-currentPosition.Z) < 20))) {
             drawing = false;
             
             printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition.X,lastPosition.Y,lastPosition.Z);
@@ -936,7 +841,6 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         }*/
         
 
-        //headpos = GetLimbPosition(aUsers[i], XN_SKEL_NECK);
         headpos = GetLimbPosition(aUsers[i], XN_SKEL_HEAD);
     }
     glEnable(GL_TEXTURE_2D);//*/

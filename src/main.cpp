@@ -26,7 +26,7 @@
 #include <XnCodecIDs.h>
 #include <XnCppWrapper.h>
 #include "SceneDrawer.h"
-#include <GL/glut.h>
+#include <glut.h>
 #include <map>
 #include <time.h>
 
@@ -375,7 +375,7 @@ void glInit(int* pargc, char** argv) {
     glutInit(pargc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_MULTISAMPLE);
     glutInitWindowSize(1024, 768);
-    glutCreateWindow ("lumen");
+    glutCreateWindow ("Lumen");
     //glutFullScreen();
     glutSetCursor(GLUT_CURSOR_NONE);
 
@@ -432,7 +432,7 @@ void glInit(int* pargc, char** argv) {
     glEnable(GL_TEXTURE_2D);    
 }
 
-#define SAMPLE_XML_PATH "../../../../Data/SamplesConfig.xml"
+#define SAMPLE_XML_PATH "SamplesConfig.xml"
 
 #define CHECK_RC(nRetVal, what)                                      \
     if(nRetVal != XN_STATUS_OK) {                                    \
