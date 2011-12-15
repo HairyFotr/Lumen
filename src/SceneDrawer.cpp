@@ -1,24 +1,3 @@
-/****************************************************************************
-*                                                                           *
-*  OpenNI 1.1 Alpha                                                         *
-*  Copyright (C) 2011 PrimeSense Ltd.                                       *
-*                                                                           *
-*  This file is part of OpenNI.                                             *
-*                                                                           *
-*  OpenNI is free software: you can redistribute it and/or modify           *
-*  it under the terms of the GNU Lesser General Public License as published *
-*  by the Free Software Foundation, either version 3 of the License, or     *
-*  (at your option) any later version.                                      *
-*                                                                           *
-*  OpenNI is distributed in the hope that it will be useful,                *
-*  but WITHOUT ANY WARRANTY; without even the implied warranty of           *
-*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the             *
-*  GNU Lesser General Public License for more details.                      *
-*                                                                           *
-*  You should have received a copy of the GNU Lesser General Public License *
-*  along with OpenNI. If not, see <http://www.gnu.org/licenses/>.           *
-*                                                                           *
-****************************************************************************/
 //---------------------------------------------------------------------------
 // Includes
 //---------------------------------------------------------------------------
@@ -34,10 +13,7 @@
 
 ///Miško
 ///Geste - menu
-///shranjevanje kalibracij
 
-///join into one file... 
-///how to get on github? take whole openni and branch lumen,scala,...?
 ///hires primesense camera... I can has!?
     //zaklenjeno na kinectu
 
@@ -45,10 +21,13 @@
 #include <glut.h>
 #include <glu.h>
 #include <gl.h>
-//#include <opencv.hpp>
-//#include <cv.h>
-//#include <highgui.h>
-//#include <cxcore.h>
+//#define USE_OPENCV
+#ifdef USE_OPENCV
+    #include <cv.h>
+    #include <cv.hpp>
+    #include <highgui.h>
+    #include <cxcore.h>//*/
+#endif
 #include <stdio.h>
 #include <string>
 #include <map>
@@ -137,6 +116,9 @@ extern XnPoint3D CurrentItem;
 
 extern XnBool g_bMouseDown;
 extern XnBool g_bUseMouse;
+extern float rr;
+extern float gg;
+extern float bb;
 
 // Drawing functions
 void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r = 1, double g = 1, double b = 1)
@@ -176,6 +158,7 @@ void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, doub
 // More drawing
 void DrowTrackPad()
 {
+    return;
     if(!g_bInSession) return;
   
     printf("drowtrackpad\n");
@@ -398,16 +381,16 @@ class Line {
 public:
     Line() {
         brush = 0; 
-        r = (float)rand()/(float)RAND_MAX;
-        g = (float)rand()/(float)RAND_MAX;
-        b = (float)rand()/(float)RAND_MAX;
+        r=rr;
+        g=gg;
+        b=bb;
         displayList = -1;
     }    
-    Line(int b) {
-        brush = b;
-        r = (float)rand()/(float)RAND_MAX;
-        g = (float)rand()/(float)RAND_MAX;
-        b = (float)rand()/(float)RAND_MAX;
+    Line(int br) {
+        brush = br;
+        r=rr;
+        g=gg;
+        b=bb;
         displayList = -1;
     }
     LinePoints linePoints;
@@ -445,7 +428,7 @@ public:
             glCallList(displayList);
         } else {
             //r=1; g=0; b=0.3; 
-            a=0.55;
+            a=0.55;a=0.8;
             glColor4f(r, g, b, a);
             // Two-pass rendering - front/back
             glEnable(GL_CULL_FACE);
@@ -466,7 +449,7 @@ public:
                     //brush = 1;
                     
                     switch(brush) {
-                        case 4: {
+                        case 2: {
                             glBegin(GL_QUADS);
                             
                             int s[4*4]={+1,+1,-1,+1, 
@@ -519,7 +502,7 @@ public:
                             }
                             glEnd();
                             break;
-                        } case 3: {
+                        } case 1: {
                             glBegin(GL_QUADS);
                             Vec3 n = vecA.cross(vecB); n.normalize();
                             glNormal3f(n.x, n.y, n.z);
@@ -529,15 +512,15 @@ public:
                             glVertex3f(vecB.x+4, vecB.y, vecB.z);
                             glEnd();
                             break;
-                        } case 1:case 2:default: {
+                        } case 0:default: {
                             Vec3 unit = Vec3(0,0,1);
                             Vec3 d = vecA - vecB;
                             Vec3 cross = unit.cross(d);
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 20;
-                            if(currentBrush == 1) polycount = 8;
+                            int polycount = 10;
+                            //if(currentBrush == 1) polycount = 8;
                             
                             if(start == true) {
                                 start = false;
@@ -614,10 +597,12 @@ XnRGB24Pixel* g_pTexMap = NULL;
 unsigned int g_nTexMapX = 0;
 unsigned int g_nTexMapY = 0;
 
-//cv::VideoCapture cap;
-//cv::Mat frame;
-//cv::Size size;
+#ifdef USE_OPENCV
+cv::VideoCapture cap;
+cv::Mat frame;
+cv::Size size;
 GLuint cameraImageTextureID;
+#endif
 
 XnPoint3D headpos;
 
@@ -638,7 +623,8 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         g_pTexMapInit = true;
     
         // init camera and its texture
-        /*cap.open(0);
+        #ifdef USE_OPENCV
+        cap.open(0);
         cap >> frame;
         if(frame.data) {
             printf("%dx%d\n", frame.cols, frame.rows);
@@ -654,7 +640,8 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
 
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
             glDisable(GL_TEXTURE_RECTANGLE_ARB);
-        }*/
+        }
+        #endif
         
         // init head position
         headpos.X = 0;
@@ -672,20 +659,23 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
     /////int width = imd.XRes(), height = imd.YRes();
     int width = 640, height = 480;
     
+
+    // set 2D viewpoint for head-camera view
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    //glOrtho(0, size.width, size.height, 0, -1.0, 1.0);
+    glOrtho(0, 1024, 768, 0, -1.0, 1.0);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
     // render head-camera
-    //cap >> frame;
+    #ifdef USE_OPENCV
+    cap >> frame;
 
-    /*if(frame.data) {
+    if(frame.data) {
         size = frame.size();
-
-        // set 2D viewpoint for head-camera view
-        glDisable(GL_DEPTH_TEST);
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glOrtho(0, size.width, size.height, 0, -1.0, 1.0);
-
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
 
         // set and render camera Texture
         if(frame.channels() == 3) {
@@ -706,24 +696,28 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         glEnd();
         glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
-        // user status indicator
-        //if(headpos.X == 0 || isnan(headpos.X)) {
-        if(g_nCurrentUser == -1) {
-            glColor3f(1,0,0); //else glColor3f(0,1,0);
-            glBegin(GL_QUADS);
-            glVertex3f(5,25, 0.0);
-            glVertex3f(25,25, 0.0);
-            glVertex3f(25,5, 0.0);
-            glVertex3f(5,5, 0.0);
-            glEnd();
-        }
-        
         DrowTrackPad();
         //if(!g_bInSession) return;
         
-        glEnable(GL_DEPTH_TEST);
     }//*/
+    #endif
     
+    // user status indicator
+    //if(headpos.X == 0 || isnan(headpos.X)) {
+    if(g_nCurrentUser == -1) {
+        glColor4f(1,0,0,1); //else glColor3f(0,1,0);
+    } else {
+        glColor4f(rr,gg,bb,1); //else glColor3f(0,1,0);
+    }
+    glBegin(GL_QUADS);
+    glVertex3f(5,50, 0.0);
+    glVertex3f(50,50, 0.0);
+    glVertex3f(50,5, 0.0);
+    glVertex3f(5,5, 0.0);
+    glEnd();
+
+    glEnable(GL_DEPTH_TEST);
+
     // setup the 3D viewpoint
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();

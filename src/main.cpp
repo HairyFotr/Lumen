@@ -1,24 +1,3 @@
-/****************************************************************************
-*                                                                           *
-*  OpenNI 1.1 Alpha                                                         *
-*  Copyright (C) 2011 PrimeSense Ltd.                                       *
-*                                                                           *
-*  This file is part of OpenNI.                                             *
-*                                                                           *
-*  OpenNI is free software: you can redistribute it and/or modify           *
-*  it under the terms of the GNU Lesser General Public License as published *
-*  by the Free Software Foundation, either version 3 of the License, or     *
-*  (at your option) any later version.                                      *
-*                                                                           *
-*  OpenNI is distributed in the hope that it will be useful,                *
-*  but WITHOUT ANY WARRANTY; without even the implied warranty of           *
-*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the             *
-*  GNU Lesser General Public License for more details.                      *
-*                                                                           *
-*  You should have received a copy of the GNU Lesser General Public License *
-*  along with OpenNI. If not, see <http://www.gnu.org/licenses/>.           *
-*                                                                           *
-****************************************************************************/
 //---------------------------------------------------------------------------
 // Includes
 //---------------------------------------------------------------------------
@@ -358,17 +337,38 @@ void glutKeyboard(unsigned char key, int x, int y) {
         case 'S': SaveCalibration(); break;
         case 'L': LoadCalibration(); break;
         case 'h': g_bLookFromHead = !g_bLookFromHead; break;
-        case '0':case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'0'; break;
+        case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'1'; break;
         case 'c': g_bClear = true; break;
         case 'm': g_bUseMouse = !g_bUseMouse; break;
     }
 }
 
+void randomcolor(float& r, float& g, float& b) {
+    r = (float)rand()/(float)RAND_MAX;
+    g = (float)rand()/(float)RAND_MAX;
+    b = (float)rand()/(float)RAND_MAX;
+    if(r+b+g < 1 || r+b+g > 2.5 || (fabs(r-g)<0.1 && fabs(b-g)<0.1) ) randomcolor(r,g,b);
+}
+float rr=0,gg=0,bb=0;
 void processMouse(int button, int state, int x, int y) {
-    if(state == GLUT_DOWN)
-        g_bMouseDown = TRUE;
-    else
+    if(state == GLUT_DOWN) {
+        if (button == GLUT_LEFT_BUTTON) {
+			g_bMouseDown = TRUE;
+			if(rr==0&&gg==0&&bb==0) randomcolor(rr,gg,bb);
+		} else if (button == GLUT_RIGHT_BUTTON) {
+		    currentBrush = (currentBrush+1)%3;
+		} else if (button == GLUT_MIDDLE_BUTTON) {
+		    randomcolor(rr,gg,bb);
+		    
+		}
+		/*else if (button == 4) {//UP
+		    colori += (colori+1)%colorCount
+        } else if if (button == 3) {//DOWN
+		    colori += (colori+1)%colorCount		
+        }*/
+    } else {
         g_bMouseDown = FALSE;
+    }
 }
 
 void glInit(int* pargc, char** argv) {
@@ -432,7 +432,7 @@ void glInit(int* pargc, char** argv) {
     glEnable(GL_TEXTURE_2D);    
 }
 
-#define SAMPLE_XML_PATH "SamplesConfig.xml"
+#define SAMPLE_XML_PATH "../../SamplesConfig.xml"
 
 #define CHECK_RC(nRetVal, what)                                      \
     if(nRetVal != XN_STATUS_OK) {                                    \
