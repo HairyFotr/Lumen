@@ -5,28 +5,19 @@
 //TODO
 ///Brushi - partikli
 ///Opacity - tekstura
-    ///podatkovno strukturo za črte, 
-        //ki se auto depth-sorta
-    ///slika zakriva roko/sceno
-        //kombinacija kinecta in kamer za dobivanje globine na kamera-sliki
-///Barve
-
-///Miško
-///Geste - menu
-
-///hires primesense camera... I can has!?
-    //zaklenjeno na kinectu
+///slika zakriva roko/sceno
+    //kombinacija kinecta in kamer za dobivanje globine na kamera-sliki
 
 #include "SceneDrawer.h"
 #include <glut.h>
 #include <glu.h>
 #include <gl.h>
-//#define USE_OPENCV
+#define USE_OPENCV
 #ifdef USE_OPENCV
-    #include <cv.h>
-    #include <cv.hpp>
-    #include <highgui.h>
-    #include <cxcore.h>//*/
+    #include <opencv2/opencv.hpp>
+#endif
+#ifdef USE_OPENCV2
+    #include <opencv2/opencv.hpp>
 #endif
 #include <stdio.h>
 #include <string>
@@ -597,12 +588,16 @@ XnRGB24Pixel* g_pTexMap = NULL;
 unsigned int g_nTexMapX = 0;
 unsigned int g_nTexMapY = 0;
 
-#ifdef USE_OPENCV
+#ifdef USE_OPENCV2
 cv::VideoCapture cap;
 cv::Mat frame;
 cv::Size size;
-GLuint cameraImageTextureID;
 #endif
+#ifdef USE_OPENCV
+    CvCapture* cap = cvCaptureFromCAM(CV_CAP_ANY);
+    IplImage* frame;
+#endif
+GLuint cameraImageTextureID;
 
 XnPoint3D headpos;
 
@@ -623,11 +618,33 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         g_pTexMapInit = true;
     
         // init camera and its texture
-        #ifdef USE_OPENCV
+        #ifdef USE_OPENCV2
         cap.open(0);
         cap >> frame;
         if(frame.data) {
             printf("%dx%d\n", frame.cols, frame.rows);
+            glEnable(GL_TEXTURE_RECTANGLE_ARB);
+
+            glGenTextures(1, &cameraImageTextureID);
+            glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
+
+            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+            glDisable(GL_TEXTURE_RECTANGLE_ARB);
+        }
+        #endif
+        #ifdef USE_OPENCV
+        //cap.open(0);
+        //cap >> frame;
+        //frame = cvQueryFrame(cap);
+        if(cvGrabFrame(cap)) {
+            frame = cvRetrieveFrame(cap);
+            
+            printf("%dx%d\n", frame->width, frame->height);
             glEnable(GL_TEXTURE_RECTANGLE_ARB);
 
             glGenTextures(1, &cameraImageTextureID);
@@ -671,9 +688,8 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
     glLoadIdentity();
 
     // render head-camera
-    #ifdef USE_OPENCV
+    #ifdef USE_OPENCV2
     cap >> frame;
-
     if(frame.data) {
         size = frame.size();
 
@@ -697,6 +713,33 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
         DrowTrackPad();
+        //if(!g_bInSession) return;
+        
+    }//*/
+    #endif
+    #ifdef USE_OPENCV
+    if(cvGrabFrame(cap)) {
+        frame = cvRetrieveFrame(cap);
+        // set and render camera Texture
+        if(frame->nChannels == 3) {
+            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, frame->width, frame->height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame->imageData );
+        } else if(frame->nChannels == 4) {
+            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, frame->width, frame->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame->imageData );
+        }
+
+        // camera
+        glEnable(GL_TEXTURE_RECTANGLE_ARB);
+        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
+
+        glBegin(GL_QUADS);
+        glTexCoord2i(0,frame->height);          glVertex3f(0.0,frame->height, 0.0);
+        glTexCoord2i(frame->width,frame->height); glVertex3f(frame->width,frame->height, 0.0);
+        glTexCoord2i(frame->width,0);           glVertex3f(frame->width,0.0, 0.0);
+        glTexCoord2i(0,0);                    glVertex3f(0.0,0.0, 0.0);
+        glEnd();
+        glDisable(GL_TEXTURE_RECTANGLE_ARB);
+
+        //DrowTrackPad();
         //if(!g_bInSession) return;
         
     }//*/
