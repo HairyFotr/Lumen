@@ -1,20 +1,20 @@
 //---------------------------------------------------------------------------
 // Includes
 //---------------------------------------------------------------------------
-#include <XnOpenNI.h>
-#include <XnCodecIDs.h>
-#include <XnCppWrapper.h>
+#include <ni/XnOpenNI.h>
+#include <ni/XnCodecIDs.h>
+#include <ni/XnCppWrapper.h>
 #include "SceneDrawer.h"
-#include <glut.h>
+#include <GL/glut.h>
 #include <map>
 #include <time.h>
 
 //
 // Trackpad
 //
-#include <XnVHandPointContext.h>
-#include <XnVSessionManager.h>
-#include <XnVSelectableSlider2D.h>
+#include <nite/XnVHandPointContext.h>
+#include <nite/XnVSessionManager.h>
+#include <nite/XnVSelectableSlider2D.h>
 
 XnBool g_bActive = FALSE;
 XnBool g_bIsInput = FALSE;

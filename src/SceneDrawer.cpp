@@ -9,21 +9,17 @@
     //kombinacija kinecta in kamer za dobivanje globine na kamera-sliki
 
 #include "SceneDrawer.h"
-#include <glut.h>
-#include <glu.h>
-#include <gl.h>
-#define USE_OPENCV
-#ifdef USE_OPENCV
-    #include <opencv2/opencv.hpp>
-#endif
-#ifdef USE_OPENCV2
-    #include <opencv2/opencv.hpp>
-#endif
+#include <GL/glut.h>
+#include <GL/glu.h>
+#include <GL/gl.h>
+#include <opencv/cv.h>
+#include <opencv/cxcore.h>
+#include <opencv/highgui.h>
 #include <stdio.h>
 #include <string>
 #include <map>
-#include <XnOpenNI.h>
-#include <XnCppWrapper.h>
+#include <ni/XnOpenNI.h>
+#include <ni/XnCppWrapper.h>
 #include <vector>
 #include <algorithm>
 using namespace std;
@@ -49,15 +45,6 @@ float g_pDepthHist[MAX_DEPTH];
 
 #define _USE_MATH_DEFINES
 #include <math.h>
-
-/*
-unsigned int getClosestPowerOfTwo(unsigned int n) {
-    unsigned int m = 2;
-    while(m < n) m<<=1;
-
-    return m;
-}
-*/
 
 //
 //trackpad
@@ -112,8 +99,7 @@ extern float gg;
 extern float bb;
 
 // Drawing functions
-void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r = 1, double g = 1, double b = 1)
-{
+void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r = 1, double g = 1, double b = 1) {
     const GLubyte ind[2] = {0, 1};
     GLfloat verts[6] = { ptMins.X, ptMins.Y, ptMins.Z, ptMaxs.X, ptMaxs.Y, ptMaxs.Z };
     glColor4f(r,g,b,1.0f);
@@ -123,8 +109,7 @@ void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, doubl
     glFlush();
 }
 
-void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r, double g, double b)
-{
+void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r, double g, double b) {
     XnPoint3D ptTopLeft = ptMins;
     XnPoint3D ptBottomRight = ptMaxs;
 
@@ -147,13 +132,9 @@ void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, doub
 }
 
 // More drawing
-void DrowTrackPad()
-{
-    return;
+void DrowTrackPad() {
     if(!g_bInSession) return;
   
-    printf("drowtrackpad\n");
-
     XnDouble r, g, b;
 
     if(!g_bActive) {
@@ -217,12 +198,8 @@ void DrowTrackPad()
   }
 }
 
-
-
-
-
 //
-//
+// end trackpad
 //
 
 XnFloat Colors[][3] = {{0,1,1}, {0,0,1}, {0,1,0}, {1,1,0}, {1,0,0}, {1,.5,0}, {.5,1,0}, {0,.5,1}, {.5,0,1}, {1,1,.5}, {1,1,1}};
@@ -288,7 +265,6 @@ const XnChar* GetPoseErrorString(XnPoseDetectionStatus error) {
 }
 
 GLUquadricObj* quadric;
-
 
 class Vec3 {
 public:
