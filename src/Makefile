@@ -4,13 +4,13 @@ BIN_DIR = ../bin
 
 INC_DIRS = /usr/include/opencv /usr/include/ni /usr/include/nite /usr/include
 
-SRC_FILES = main.cpp SceneDrawer.cpp
+SRC_FILES = Geometry.cpp main.cpp SceneDrawer.cpp
 
 EXE_NAME = Lumen
 
 USED_LIBS += glut OpenNI GLU XnVNite_1_5_2
 CFLAGS += -lml -lcvaux -lhighgui -lcv -lcxcore
-LDFLAGS += `pkg-config --libs opencv`
+LDFLAGS += `pkg-config --libs opencv` -lboost_thread-mt
 
 LIB_DIRS += /usr/local/lib
 

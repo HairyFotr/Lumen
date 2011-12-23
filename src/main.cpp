@@ -86,7 +86,7 @@ void XN_CALLBACK_TYPE TrackPad_PrimaryCreate(const XnVHandPointContext* cxt, con
 }
 
 void XN_CALLBACK_TYPE TrackPad_PrimaryDestroy(XnUInt32 nID, void* UserCxt) {
-    printf("TrackPad input has stopped!!!\n");
+    //printf("TrackPad input has stopped!!!\n");
     g_isInputStarted = FALSE;
 }
 
@@ -292,27 +292,10 @@ void LoadCalibration() {
 // this function is called each frame
 void glutDisplay(void) {
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    xn::SceneMetaData sceneMD;
-    xn::DepthMetaData depthMD;
-    xn::ImageMetaData imageMD;
-/*    g_DepthGenerator.GetMetaData(depthMD);
-    g_ImageGenerator.GetMetaData(imageMD);*/
-
-    //if(!g_bPause) {
-        // Read next available data
-        //g_Context.WaitOneUpdateAll(g_DepthGenerator);
-        g_Context.WaitAnyUpdateAll();
-    //}
-    
-    // Process the data
-    g_DepthGenerator.GetAlternativeViewPointCap().ResetViewPoint();
-    g_DepthGenerator.GetMetaData(depthMD);
-    /////g_ImageGenerator.GetMetaData(imageMD);
-    g_UserGenerator.GetUserPixels(0, sceneMD);
-    DrawDepthMap(imageMD, depthMD, sceneMD);    
-    //trackpad
+    g_Context.WaitAnyUpdateAll();
     g_pSessionManager->Update(&g_Context);
+
+    RenderLumen();
 
     glutSwapBuffers();
 }
@@ -358,8 +341,7 @@ void processMouse(int button, int state, int x, int y) {
 		} else if (button == GLUT_RIGHT_BUTTON) {
 		    currentBrush = (currentBrush+1)%3;
 		} else if (button == GLUT_MIDDLE_BUTTON) {
-		    randomcolor(rr,gg,bb);
-		    
+		    randomcolor(rr,gg,bb);		    
 		}
 		/*else if (button == 4) {//UP
 		    colori += (colori+1)%colorCount
@@ -374,11 +356,12 @@ void processMouse(int button, int state, int x, int y) {
 void glInit(int* pargc, char** argv) {
     glutInit(pargc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_MULTISAMPLE);
-    glutInitWindowSize(1024, 768);
+    glutInitWindowSize(640, 480);
     glutCreateWindow ("Lumen");
     //glutFullScreen();
     glutSetCursor(GLUT_CURSOR_NONE);
-
+    randomcolor(rr,gg,bb);
+    
     glutKeyboardFunc(glutKeyboard);
     glutDisplayFunc(glutDisplay);
     glutIdleFunc(glutIdle);

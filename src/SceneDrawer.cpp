@@ -8,7 +8,10 @@
 ///slika zakriva roko/sceno
     //kombinacija kinecta in kamer za dobivanje globine na kamera-sliki
 
+#define LUMEN_CAMERA //use camera
+
 #include "SceneDrawer.h"
+#include "Geometry.cpp"
 #include <GL/glut.h>
 #include <GL/glu.h>
 #include <GL/gl.h>
@@ -18,10 +21,13 @@
 #include <stdio.h>
 #include <string>
 #include <map>
-#include <ni/XnOpenNI.h>
-#include <ni/XnCppWrapper.h>
 #include <vector>
 #include <algorithm>
+#define _USE_MATH_DEFINES
+#include <math.h>
+#include <ni/XnOpenNI.h>
+#include <ni/XnCppWrapper.h>
+#include <boost/thread.hpp>
 using namespace std;
 
 extern xn::UserGenerator g_UserGenerator;
@@ -42,10 +48,7 @@ extern XnUInt32 g_nCurrentUser;
 
 #define MAX_DEPTH 10000
 float g_pDepthHist[MAX_DEPTH];
-
-#define _USE_MATH_DEFINES
-#include <math.h>
-
+GLUquadricObj* quadric;
 //
 //trackpad
 //
@@ -264,465 +267,119 @@ const XnChar* GetPoseErrorString(XnPoseDetectionStatus error) {
     }
 }
 
-GLUquadricObj* quadric;
-
-class Vec3 {
-public:
-    Vec3(float X, float Y, float Z) { x = X; y = Y; z = Z; }
-    Vec3() { x = 0; y = 0; z = 0; }
-    float x,y,z;
-    
-    Vec3 operator+(Vec3 v) { return Vec3(x+v.x, y+v.y, z+v.z); }
-    Vec3 operator-(Vec3 v) { return Vec3(x-v.x, y-v.y, z-v.z); }
-    Vec3 cross(Vec3 v) { return Vec3(y*v.z - z*v.y, z*v.x - x*v.z, x*v.y - y*v.x); }
-    float dot(Vec3 v) { Vec3 n = Vec3(x*v.x, y*v.y, z*v.z); return n.x+n.y+n.z; }
-    float length() { return sqrt(x*x+y*y+z*z); }
-    float angle(Vec3 v) { return (180.0/M_PI * acos((*this).dot(v)/v.length())); }
-    bool operator==(Vec3 v) { return (x==v.x && y==v.y && z==v.z); }
-    bool operator!=(Vec3 v) { return !(*this==v); }
-    Vec3 operator-() { return Vec3(-x,-y,-z); }
-    void operator+=(Vec3 v) { x += v.x; y += v.y; z += v.z; }
-    void operator-=(Vec3 v) { x -= v.x; y -= v.y; z -= v.z; }
-    void operator*=(float f) { x *= f; y *= f; z *= f; }
-    void operator/=(float f) { x /= f; y /= f; z /= f; }
-    bool isZero() { return (x==0 && y==0 && z==0); }
-    void normalize() { 
-        float len = length();
-        x/=len; y/=len; z/=len;
-    }
-};
-
-class LinePoint {
-    public:
-    LinePoint(Vec3 p, Vec3 pp) { 
-        point = p;
-        projpoint = pp;
-        thickness = 1;
-    }
-    
-    Vec3 point, projpoint;//originalpoint, projected point
-    float thickness;
-};
-
-class LinePoints {
-protected:
-    //The Vector container that will hold the collection of Items
-    vector<LinePoint> items;
-    
-public:
-    int Add(LinePoint item) {
-        //variabilna debelina
-        /*
-        if(items.size() > 0) {
-            Vec3 d = items[items.size()-1].point - item.point;
-            item.thickness = (140-d.length())/50;
-            if(item.thickness < 0.1) item.thickness = 0.1;
-            if(item.thickness > 150) item.thickness = 150;
-            
-            //average, current has *2 weight
-            float avg = item.thickness*2;
-            int i;
-            for(i = 1; (items.size()-i >= 0)&&(i < 5); i++) {
-                avg += items[items.size()-i].thickness;
-            }
-            item.thickness = avg/(i+2);
-        }*/
-    
-        //Add the item to the container
-        items.push_back(item); 
-
-        //Return the position of the item within the container.
-        return (items.size()-1);
-    }
-    int Add(Vec3 p, Vec3 pp) { return Add(LinePoint(p, pp)); }
-    int Add(XnPoint3D p, XnPoint3D pp) { return Add(Vec3(p.X,p.Y,p.Z), Vec3(pp.X,pp.Y,pp.Z)); }    
-    //LinePoint* GetLinePoint(int ItemKey) { return &(items[ItemKey]); }    
-    //void Remove(int ItemKey) { items.erase(GetLinePoint(ItemKey)); }    
-    void Clear(void) { items.clear(); }  
-    int Count(void) { return items.size(); }      
-    void Reverse(void) { reverse(items.begin(), items.end()); }      
-    LinePoint& operator [](int ItemKey) { return items[ItemKey]; }
-};
-
-class Line {
-public:
-    Line() {
-        brush = 0; 
-        r=rr;
-        g=gg;
-        b=bb;
-        displayList = -1;
-    }    
-    Line(int br) {
-        brush = br;
-        r=rr;
-        g=gg;
-        b=bb;
-        displayList = -1;
-    }
-    LinePoints linePoints;
-    int brush;//tube, rectangle, flat, ...
-    float r,g,b,a;
-    Vec3 avgPoint;
-    int displayList;
-    
-    Vec3 calculateAvgPoint() {
-        //if Z of start > Z end, reverse
-        if(linePoints[0].point.z > linePoints[linePoints.Count()-1].point.z && brush < 3) { linePoints.Reverse(); }
-        
-        //calculate avg
-        Vec3 avg = Vec3(0,0,0);
-        for(int i=0; i<linePoints.Count(); i++) {
-            avg += linePoints[i].point;
-        }
-        avg /= linePoints.Count();
-        avgPoint = avg;
-        
-        return avg;
-    }
-    
-    void compileLine() {
-        displayList = -1;
-        int displaylist = glGenLists(1);
-        glNewList(displaylist,GL_COMPILE);
-        renderLine();
-        glEndList();
-        displayList = displaylist;
-    }
-        
-    void renderLine() {
-        if(displayList != -1 && glIsList(displayList)) {
-            glCallList(displayList);
-        } else {
-            //r=1; g=0; b=0.3; 
-            a=0.55;a=0.8;
-            glColor4f(r, g, b, a);
-            // Two-pass rendering - front/back
-            glEnable(GL_CULL_FACE);
-            for(int pass=0; pass<=1; pass++) {
-                if(pass==0) glCullFace(GL_FRONT); else glCullFace(GL_BACK);
-
-                bool start = true, end = false;
-                            
-                for(int p = 0; p < linePoints.Count()-1; p++) {
-                    if(p==linePoints.Count()-2) end = true;
-                    
-                    LinePoint lp1 = linePoints[p], lp2 = linePoints[p+1];
-                    Vec3 vecA = lp1.projpoint;
-                    Vec3 vecB = lp2.projpoint;
-                    
-                    if(vecA.isZero() || vecB.isZero()) continue;
-                    
-                    //brush = 1;
-                    
-                    switch(brush) {
-                        case 2: {
-                            glBegin(GL_QUADS);
-                            
-                            int s[4*4]={+1,+1,-1,+1, 
-                                        +1,-1,-1,-1,
-                                        -1,-1,-1,+1,
-                                        +1,-1,+1,+1};
-                            float size = 3;
-                            
-                            Vec3 v[4];
-                            if(start == true) {
-                                start = false;
-                                v[0] = vecA; v[0].x += +size*lp1.thickness; v[0].y += +size*lp1.thickness;
-                                v[1] = vecA; v[1].x += -size*lp1.thickness; v[1].y += +size*lp1.thickness;
-                                v[2] = vecA; v[2].x += -size*lp1.thickness; v[2].y += -size*lp1.thickness;
-                                v[3] = vecA; v[3].x += +size*lp1.thickness; v[3].y += -size*lp1.thickness;
-                                
-                                Vec3 n;
-                                for(int j=0; j<4; j++) n += v[j].cross(v[(j+1)%4]);
-                                n.normalize();
-                                glNormal3f(n.x, n.y, n.z);
-                                
-                                for(int k=0; k<4; k++) glVertex3f(v[k].x, v[k].y, v[k].z);
-                            }
-                            for(int i=0; i<4*4; i+=4) {
-                                v[0] = vecA; v[0].x += size*lp1.thickness*s[i+0]; v[0].y += size*lp1.thickness*s[i+1];
-                                v[1] = vecA; v[1].x += size*lp1.thickness*s[i+2]; v[1].y += size*lp1.thickness*s[i+3];
-                                v[2] = vecB; v[2].x += size*lp2.thickness*s[i+2]; v[2].y += size*lp2.thickness*s[i+3];
-                                v[3] = vecB; v[3].x += size*lp2.thickness*s[i+0]; v[3].y += size*lp2.thickness*s[i+1];
-                                
-                                Vec3 n;
-                                for(int j=0; j<4; j++) n += v[j].cross(v[(j+1)%4]);
-                                n.normalize();
-                                glNormal3f(n.x, n.y, n.z);
-                                
-                                for(int k=0; k<4; k++) glVertex3f(v[k].x, v[k].y, v[k].z);
-                            }
-                            if(end == true) {
-                                end = false;
-                                v[0] = vecB; v[0].x += +size*lp2.thickness; v[0].y += +size*lp2.thickness;
-                                v[1] = vecB; v[1].x += -size*lp2.thickness; v[1].y += +size*lp2.thickness;
-                                v[2] = vecB; v[2].x += -size*lp2.thickness; v[2].y += -size*lp2.thickness;
-                                v[3] = vecB; v[3].x += +size*lp2.thickness; v[3].y += -size*lp2.thickness;
-
-                                Vec3 n;
-                                for(int j=0; j<4; j++) n += v[j].cross(v[(j+1)%4]);
-                                n.normalize();
-                                glNormal3f(n.x, n.y, n.z);
-                                
-                                for(int k=0; k<4; k++) glVertex3f(v[k].x, v[k].y, v[k].z);
-                            }
-                            glEnd();
-                            break;
-                        } case 1: {
-                            glBegin(GL_QUADS);
-                            Vec3 n = vecA.cross(vecB); n.normalize();
-                            glNormal3f(n.x, n.y, n.z);
-                            glVertex3f(vecA.x+4, vecA.y, vecA.z);
-                            glVertex3f(vecA.x-4, vecA.y, vecA.z);
-                            glVertex3f(vecB.x-4, vecB.y, vecB.z);
-                            glVertex3f(vecB.x+4, vecB.y, vecB.z);
-                            glEnd();
-                            break;
-                        } case 0:default: {
-                            Vec3 unit = Vec3(0,0,1);
-                            Vec3 d = vecA - vecB;
-                            Vec3 cross = unit.cross(d);
-                            float angle = unit.angle(d);
-                            
-                            float size = 3.5;
-                            int polycount = 10;
-                            //if(currentBrush == 1) polycount = 8;
-                            
-                            if(start == true) {
-                                start = false;
-                                glPushMatrix();
-                                glTranslatef(vecA.x,vecA.y,vecA.z);
-                                glRotatef(angle,cross.x,cross.y,cross.z);
-                                //glColor4f(r, g, b, a);
-                                gluSphere(quadric, size*lp1.thickness, polycount,polycount);
-                                glPopMatrix();
-                            }
-
-                            glPushMatrix();
-                            glTranslatef(vecB.x,vecB.y,vecB.z);
-                            glRotatef(angle,cross.x,cross.y,cross.z);
-                            //glColor4f(r, g, b, a);
-                            gluCylinder(quadric, size*lp1.thickness, size*lp2.thickness, d.length(), polycount,3);
-                            //glColor4f(r, g, b, a);
-                            gluSphere(quadric, size*lp2.thickness, polycount,polycount);
-                            glPopMatrix();
-                            break;
-                        }
-                    }
-                }
-            }
-            glDisable(GL_CULL_FACE);
-        }
-    }
-    /*int Add(Vec3 p, Vec3 pp) { return linePoints.Add(LinePoint(p, pp)); }
-    int Add(XnPoint3D p, XnPoint3D pp) { return Add(Vec3(p.X,p.Y,p.Z), Vec3(pp.X,pp.Y,pp.Z)); }
-    LinePoint& operator [](int ItemKey) { return linePoints[ItemKey]; }*/
-};
-
-class Lines {
-protected:
-    //The Vector container that will hold the collection of Items
-    vector<Line> items;
-    
-public:
-    int Add(Line item) {
-
-        //insert line at the appropriate Z value
-        item.calculateAvgPoint();
-        if(items.size() > 0) {
-            int i = items.size()-1;
-            while(i >= 0 && items[i].avgPoint.z > item.avgPoint.z) i--;
-            items.insert(items.begin() + i+1, item);
-        } else {
-            items.insert(items.begin(), item);
-        }
-        
-        //Return the position of the item within the container.
-        return (items.size()-1);
-    }
-    //Line* GetLine(int ItemKey) { return &(items[ItemKey]); }    
-    //void Remove(int ItemKey) { items.erase(GetLine(ItemKey)); }  
-    
-    //TODO: deep clear - clear inner lists, delete objects and displaylists
-    void Clear(void) { items.clear(); }  
-    int Count(void) { return items.size(); }      
-    Line& operator [](int ItemKey) { return items[ItemKey]; }
-};
-
-
-#define MAX_POINTS 400
 XnPoint3D lastPosition, lastPositionProj;
 bool drawing = false;
 
-//new
 Line currentLine;
 Lines lines;
 
-bool g_pTexMapInit = false;
-XnRGB24Pixel* g_pTexMap = NULL;
-unsigned int g_nTexMapX = 0;
-unsigned int g_nTexMapY = 0;
+bool lumenInit = false;
 
-#ifdef USE_OPENCV2
+#ifdef LUMEN_CAMERA
 cv::VideoCapture cap;
 cv::Mat frame;
 cv::Size size;
+GLuint cameraTextureID;
+boost::thread camThread;
+bool cameraInit = false;
+bool cameraLock = false;
+void initCamera() {
+    cap.open(-1);
+    cap >> frame;
+    if(frame.data) {
+        size = frame.size();
+    
+        glEnable(GL_TEXTURE_RECTANGLE_ARB);
+
+        glGenTextures(1, &cameraTextureID);
+        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
+
+        glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glDisable(GL_TEXTURE_RECTANGLE_ARB);
+
+        cameraInit = true;
+    }
+}
+void readCamera() {
+    if(cameraInit==true) cap >> frame;
+    cameraLock = false;
+}
+void updateCamera() {
+    if(!cameraLock) {
+        cameraLock = true;
+        camThread.join();
+        if(frame.data) {
+            if(frame.channels() == 3)
+                glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, size.width, size.height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data );
+            else if(frame.channels() == 4)
+                glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, size.width, size.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame.data );            
+        }
+        camThread = boost::thread(readCamera);
+    }
+}
+void renderCamera() {
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, size.width, size.height, 0, -1.0, 1.0);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glEnable(GL_TEXTURE_RECTANGLE_ARB);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
+
+    glBegin(GL_QUADS);
+    glTexCoord2i(0,size.height);          glVertex3f(0.0,size.height, 0.0);
+    glTexCoord2i(size.width,size.height); glVertex3f(size.width,size.height, 0.0);
+    glTexCoord2i(size.width,0);           glVertex3f(size.width,0.0, 0.0);
+    glTexCoord2i(0,0);                    glVertex3f(0.0,0.0, 0.0);
+    glEnd();
+    glDisable(GL_TEXTURE_RECTANGLE_ARB);
+    glEnable(GL_DEPTH_TEST);
+}
 #endif
-#ifdef USE_OPENCV
-    CvCapture* cap = cvCaptureFromCAM(CV_CAP_ANY);
-    IplImage* frame;
-#endif
-GLuint cameraImageTextureID;
 
 XnPoint3D headpos;
 
-float fov = 0;
-float minZ = 10000, maxZ = 0;
-
-void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, const xn::SceneMetaData& smd) {
-    if(!g_pTexMapInit) {
-        // init quadric
-        quadric = gluNewQuadric();
-        gluQuadricNormals(quadric, GLU_SMOOTH);   // Create Smooth Normals
-        //gluQuadricTexture(quadric, GL_TRUE);      // Create Texture Coords
+void RenderLumen() {
+    if(!lumenInit) {
+        lumenInit = true;
         
-        // init kinect texture
-        g_nTexMapX = (((unsigned short)(dmd.FullXRes()-1) / 512) + 1) * 512;
-        g_nTexMapY = (((unsigned short)(dmd.FullYRes()-1) / 512) + 1) * 512;
-        g_pTexMap = (XnRGB24Pixel*)malloc(g_nTexMapX * g_nTexMapY * sizeof(XnRGB24Pixel));
-        g_pTexMapInit = true;
-    
+        // init quadric object
+        quadric = gluNewQuadric();
+        gluQuadricNormals(quadric, GLU_SMOOTH);
+
         // init camera and its texture
-        #ifdef USE_OPENCV2
-        cap.open(0);
-        cap >> frame;
-        if(frame.data) {
-            printf("%dx%d\n", frame.cols, frame.rows);
-            glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
-            glGenTextures(1, &cameraImageTextureID);
-            glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
-
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-            glDisable(GL_TEXTURE_RECTANGLE_ARB);
-        }
-        #endif
-        #ifdef USE_OPENCV
-        //cap.open(0);
-        //cap >> frame;
-        //frame = cvQueryFrame(cap);
-        if(cvGrabFrame(cap)) {
-            frame = cvRetrieveFrame(cap);
-            
-            printf("%dx%d\n", frame->width, frame->height);
-            glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
-            glGenTextures(1, &cameraImageTextureID);
-            glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
-
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-            glDisable(GL_TEXTURE_RECTANGLE_ARB);
-        }
+        #ifdef LUMEN_CAMERA
+        initCamera();
         #endif
         
         // init head position
         headpos.X = 0;
         headpos.Y = 0;
         headpos.Z = 0;
-        
-        // init mouse
-        /*int mouseParam=5;
-        cvSetMouseCallback("lumen",mouseHandler,&mouseParam);*/
     }
     
-    const XnDepthPixel* pDepth = dmd.Data();
-    /////const XnUInt8* pImage = imd.Data();
-
-    /////int width = imd.XRes(), height = imd.YRes();
-    int width = 640, height = 480;
+    #ifdef LUMEN_CAMERA
+    updateCamera();
+    renderCamera();
+    #endif
     
-
-    // set 2D viewpoint for head-camera view
+    // user interface
     glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    //glOrtho(0, size.width, size.height, 0, -1.0, 1.0);
-    glOrtho(0, 1024, 768, 0, -1.0, 1.0);
+    glOrtho(0, 640, 480, 0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // render head-camera
-    #ifdef USE_OPENCV2
-    cap >> frame;
-    if(frame.data) {
-        size = frame.size();
-
-        // set and render camera Texture
-        if(frame.channels() == 3) {
-            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, size.width, size.height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data );
-        } else if(frame.channels() == 4) {
-            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, size.width, size.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame.data );
-        }
-
-        // camera
-        glEnable(GL_TEXTURE_RECTANGLE_ARB);
-        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
-
-        glBegin(GL_QUADS);
-        glTexCoord2i(0,size.height);          glVertex3f(0.0,size.height, 0.0);
-        glTexCoord2i(size.width,size.height); glVertex3f(size.width,size.height, 0.0);
-        glTexCoord2i(size.width,0);           glVertex3f(size.width,0.0, 0.0);
-        glTexCoord2i(0,0);                    glVertex3f(0.0,0.0, 0.0);
-        glEnd();
-        glDisable(GL_TEXTURE_RECTANGLE_ARB);
-
-        DrowTrackPad();
-        //if(!g_bInSession) return;
-        
-    }//*/
-    #endif
-    #ifdef USE_OPENCV
-    if(cvGrabFrame(cap)) {
-        frame = cvRetrieveFrame(cap);
-        // set and render camera Texture
-        if(frame->nChannels == 3) {
-            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, frame->width, frame->height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame->imageData );
-        } else if(frame->nChannels == 4) {
-            glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, frame->width, frame->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame->imageData );
-        }
-
-        // camera
-        glEnable(GL_TEXTURE_RECTANGLE_ARB);
-        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraImageTextureID);
-
-        glBegin(GL_QUADS);
-        glTexCoord2i(0,frame->height);          glVertex3f(0.0,frame->height, 0.0);
-        glTexCoord2i(frame->width,frame->height); glVertex3f(frame->width,frame->height, 0.0);
-        glTexCoord2i(frame->width,0);           glVertex3f(frame->width,0.0, 0.0);
-        glTexCoord2i(0,0);                    glVertex3f(0.0,0.0, 0.0);
-        glEnd();
-        glDisable(GL_TEXTURE_RECTANGLE_ARB);
-
-        //DrowTrackPad();
-        //if(!g_bInSession) return;
-        
-    }//*/
-    #endif
-    
-    // user status indicator
-    //if(headpos.X == 0 || isnan(headpos.X)) {
     if(g_nCurrentUser == -1) {
         glColor4f(1,0,0,1); //else glColor3f(0,1,0);
     } else {
@@ -735,15 +392,13 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
     glVertex3f(5,5, 0.0);
     glEnd();
 
+    //DrowTrackPad()
+
     glEnable(GL_DEPTH_TEST);
 
-    // setup the 3D viewpoint
+    // lines and body
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    /*if(35+g_TestVar*5 != fov) {
-        fov = 35+g_TestVar*5;
-        printf("%f\n", fov);
-    }*/
     gluPerspective(25, (640/480+0.0), 1.0, 5000.0);
     glScalef(-1,1,1);
     
@@ -761,8 +416,6 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
         glRotatef(rot,0,1,0);
         if(g_bRotate) rot += 1.0;
     }*/
-    
-
 
     if(g_bClear) {
         g_bClear = false;
@@ -800,7 +453,7 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
             //start new line
             drawing = true;
             
-            currentLine = Line(currentBrush);
+            currentLine = Line(rr,gg,bb, currentBrush);
             
             if(lastPosition.X != 0 && lastPosition.Y != 0 && lastPosition.Z != 0) {
                 currentLine.linePoints.Add(lastPosition, lastPositionProj);
@@ -834,32 +487,8 @@ void DrawDepthMap(const xn::ImageMetaData& imd, const xn::DepthMetaData& dmd, co
             DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
             glEnd();
         }
-        /*if(g_bDrawSkeleton) {
-            glBegin(GL_LINES);
-            glColor4f(1-Colors[aUsers[i]%nColors][0], 1-Colors[aUsers[i]%nColors][1], 1-Colors[aUsers[i]%nColors][2], 1);
-            DrawLimb(aUsers[i], XN_SKEL_HEAD, XN_SKEL_NECK);
-            
-            DrawLimb(aUsers[i], XN_SKEL_NECK, XN_SKEL_LEFT_SHOULDER);
-            DrawLimb(aUsers[i], XN_SKEL_LEFT_SHOULDER, XN_SKEL_LEFT_ELBOW);
-            DrawLimb(aUsers[i], XN_SKEL_LEFT_ELBOW, XN_SKEL_LEFT_HAND);
-            
-            DrawLimb(aUsers[i], XN_SKEL_NECK, XN_SKEL_RIGHT_SHOULDER);
-            DrawLimb(aUsers[i], XN_SKEL_RIGHT_SHOULDER, XN_SKEL_RIGHT_ELBOW);
-            DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
-            
-            DrawLimb(aUsers[i], XN_SKEL_LEFT_SHOULDER, XN_SKEL_TORSO);
-            DrawLimb(aUsers[i], XN_SKEL_RIGHT_SHOULDER, XN_SKEL_TORSO);
-            
-            glEnd();
-        }*/
-        
 
         headpos = GetLimbPosition(aUsers[i], XN_SKEL_HEAD);
     }
-    glEnable(GL_TEXTURE_2D);//*/
-    
-    /*GLenum error = glGetError();
-    if(error) printf("%s\n", gluErrorString(error));*/
-
-    //glutSwapBuffers();
+    glEnable(GL_TEXTURE_2D);
 }
