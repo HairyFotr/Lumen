@@ -4,7 +4,7 @@ BIN_DIR = ../bin
 
 INC_DIRS = /usr/include/opencv /usr/include/ni /usr/include/nite /usr/include
 
-SRC_FILES = Geometry.cpp main.cpp SceneDrawer.cpp
+SRC_FILES = Geometry.cpp main.cpp LumenRender.cpp Utils.cpp
 
 EXE_NAME = Lumen
 

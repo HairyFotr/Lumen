@@ -1,17 +1,11 @@
 //---------------------------------------------------------------------------
 // Includes
 //---------------------------------------------------------------------------
-
-//TODO
-///Brushi - partikli
-///Opacity - tekstura
-///slika zakriva roko/sceno
-    //kombinacija kinecta in kamer za dobivanje globine na kamera-sliki
-
 #define LUMEN_CAMERA //use camera
 
-#include "SceneDrawer.h"
+#include "LumenRender.h"
 #include "Geometry.cpp"
+#include "Utils.h"
 #include <GL/glut.h>
 #include <GL/glu.h>
 #include <GL/gl.h>
@@ -32,27 +26,25 @@ using namespace std;
 
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
-/////extern xn::ImageGenerator g_ImageGenerator;
+//extern xn::ImageGenerator g_ImageGenerator;
 
-extern XnBool g_bDrawBackground;
-extern XnBool g_bDrawPixels;
-extern XnBool g_bDrawSkeleton;
-extern XnBool g_bPrintID;
-extern XnBool g_bPrintState;
-extern XnBool g_bRotate;
-extern XnBool g_bLookFromHead;
+extern XnBool drawSkeleton;
+extern XnBool headView;
 extern XnBool g_bClear;
 extern int g_TestVar;
 extern int currentBrush;
-extern XnUInt32 g_nCurrentUser;
+extern XnUInt32 currentUser;
+extern XnBool isMouseDown;
+extern XnBool isUsingMouse;
+extern float rr;
+extern float gg;
+extern float bb;
 
-#define MAX_DEPTH 10000
-float g_pDepthHist[MAX_DEPTH];
 GLUquadricObj* quadric;
-//
-//trackpad
-//
 
+//---------------------------------------------------------------------------
+//trackpad
+//---------------------------------------------------------------------------
 #include <XnVHandPointContext.h>
 #include <XnVSessionManager.h>
 #include <XnVSelectableSlider2D.h>
@@ -95,12 +87,6 @@ extern XnBool g_isInputStarted;
 
 extern XnPoint3D CurrentItem;
 
-extern XnBool g_bMouseDown;
-extern XnBool g_bUseMouse;
-extern float rr;
-extern float gg;
-extern float bb;
-
 // Drawing functions
 void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r = 1, double g = 1, double b = 1) {
     const GLubyte ind[2] = {0, 1};
@@ -135,7 +121,7 @@ void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, doub
 }
 
 // More drawing
-void DrowTrackPad() {
+void renderTrackPad() {
     if(!g_bInSession) return;
   
     XnDouble r, g, b;
@@ -205,9 +191,6 @@ void DrowTrackPad() {
 // end trackpad
 //
 
-XnFloat Colors[][3] = {{0,1,1}, {0,0,1}, {0,1,0}, {1,1,0}, {1,0,0}, {1,.5,0}, {.5,1,0}, {0,.5,1}, {.5,0,1}, {1,1,.5}, {1,1,1}};
-XnUInt32 nColors = 10;
-
 void glPrintString(void *font, char *str) {
     int i,l = strlen(str);
 
@@ -233,9 +216,7 @@ void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2)
     
     if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
     
-    XnPoint3D pt[2];
-    pt[0] = joint1.position;
-    pt[1] = joint2.position;
+    XnPoint3D pt[2] = {joint1.position, joint2.position};
         
     g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
     glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
@@ -315,39 +296,43 @@ void updateCamera() {
         camThread.join();
         if(frame.data) {
             if(frame.channels() == 3)
-                glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, size.width, size.height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data );
+                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, size.width, size.height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data);
             else if(frame.channels() == 4)
-                glTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, size.width, size.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame.data );            
+                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, size.width, size.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame.data);
         }
         camThread = boost::thread(readCamera);
     }
 }
 void renderCamera() {
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, size.width, size.height, 0, -1.0, 1.0);
-
+    
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-
+    
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
-
+    
     glBegin(GL_QUADS);
-    glTexCoord2i(0,size.height);          glVertex3f(0.0,size.height, 0.0);
-    glTexCoord2i(size.width,size.height); glVertex3f(size.width,size.height, 0.0);
-    glTexCoord2i(size.width,0);           glVertex3f(size.width,0.0, 0.0);
-    glTexCoord2i(0,0);                    glVertex3f(0.0,0.0, 0.0);
+    glTexCoord2i(0,size.height);            glVertex3f(0,size.height, 0);
+    glTexCoord2i(size.width,size.height);   glVertex3f(size.width,size.height, 0);
+    glTexCoord2i(size.width,0);             glVertex3f(size.width,0, 0);
+    glTexCoord2i(0,0);                      glVertex3f(0,0, 0);
     glEnd();
     glDisable(GL_TEXTURE_RECTANGLE_ARB);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_LIGHTING);
     glEnable(GL_DEPTH_TEST);
 }
 #endif
 
 XnPoint3D headpos;
 
-void RenderLumen() {
+void renderLumen() {
     if(!lumenInit) {
         lumenInit = true;
         
@@ -361,9 +346,7 @@ void RenderLumen() {
         #endif
         
         // init head position
-        headpos.X = 0;
-        headpos.Y = 0;
-        headpos.Z = 0;
+        headpos = xnCreatePoint3D(0, 0, 0);
     }
     
     #ifdef LUMEN_CAMERA
@@ -373,6 +356,7 @@ void RenderLumen() {
     
     // user interface
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, 640, 480, 0, -1.0, 1.0);
@@ -380,7 +364,7 @@ void RenderLumen() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    if(g_nCurrentUser == -1) {
+    if(currentUser == -1) {
         glColor4f(1,0,0,1); //else glColor3f(0,1,0);
     } else {
         glColor4f(rr,gg,bb,1); //else glColor3f(0,1,0);
@@ -392,8 +376,9 @@ void RenderLumen() {
     glVertex3f(5,5, 0.0);
     glEnd();
 
-    //DrowTrackPad()
+    renderTrackPad();
 
+    glEnable(GL_LIGHTING);
     glEnable(GL_DEPTH_TEST);
 
     // lines and body
@@ -405,16 +390,15 @@ void RenderLumen() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    //if(g_bLookFromHead) {
+    //if(headView) {
     gluLookAt(headpos.X,headpos.Y,headpos.Z,    // camera position
               headpos.X,headpos.Y,headpos.Z-10, // look-at vector
-              0.0,-1.0,0.0);                    // up vector 
+              0.0,-1.0,0.0);// up vector 
     /*} else {
         gluLookAt(900.0,0.0,900.0,
                   0.0,0.0,0.0,
                   0.0,-1.0,0.0);
         glRotatef(rot,0,1,0);
-        if(g_bRotate) rot += 1.0;
     }*/
 
     if(g_bClear) {
@@ -426,15 +410,11 @@ void RenderLumen() {
     XnUserID aUsers[15];
     XnUInt16 nUsers = 15;
     g_UserGenerator.GetUsers(aUsers, nUsers);
-    if(nUsers==0) {
-        headpos.X = 0;
-        headpos.Y = 0;
-        headpos.Z = 0;
-    }
-    glDisable(GL_TEXTURE_2D);
+    headpos = xnCreatePoint3D(0, 0, 0);
+
     //for(int i = 0; i < nUsers; i++) {
-    if(nUsers > 0 && g_nCurrentUser <= nUsers) {
-        int i = g_nCurrentUser-1;
+    if(nUsers>0 && currentUser>=0 && currentUser<=nUsers) {
+        int i = currentUser-1;
         XnUserID player = aUsers[i];
         XnSkeletonJoint eJoint = XN_SKEL_RIGHT_HAND;
         
@@ -443,35 +423,34 @@ void RenderLumen() {
         
         XnPoint3D currentPosition = joint.position;
         XnPoint3D currentPositionProj; g_DepthGenerator.ConvertRealWorldToProjective(1, &currentPosition, &currentPositionProj);
-
-        if(joint.fConfidence > 0 && drawing==false && ((g_bUseMouse==true && g_bMouseDown==true) 
-        ||(g_bUseMouse==false &&  
+        
+        if(drawing==false && ((isUsingMouse==true && isMouseDown==true) 
+        ||(isUsingMouse==false &&  
            fabs(lastPosition.X-currentPosition.X) + 
            fabs(lastPosition.Y-currentPosition.Y) + 
-           fabs(lastPosition.Z-currentPosition.Z)/15 > 35))) { // && currentPosition.Z < headpos.Z
+           fabs(lastPosition.Z-currentPosition.Z)/15 > 15))) { // line start
             
             //start new line
             drawing = true;
-            
             currentLine = Line(rr,gg,bb, currentBrush);
             
-            if(lastPosition.X != 0 && lastPosition.Y != 0 && lastPosition.Z != 0) {
+            if(lastPosition.X!=0 && lastPosition.Y!=0 && lastPosition.Z!=0) {
                 currentLine.linePoints.Add(lastPosition, lastPositionProj);
             }
             currentLine.linePoints.Add(currentPosition, currentPositionProj);
             
-            printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(),lastPosition.X,lastPosition.Y,lastPosition.Z);
-        } else if(joint.fConfidence > 0 && drawing==true && ((g_bUseMouse==true && g_bMouseDown==false) 
-               ||(g_bUseMouse==false &&
+            printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(), lastPosition.X,lastPosition.Y,lastPosition.Z);
+        } else if(drawing==true && ((isUsingMouse==true && isMouseDown==false) 
+               ||(isUsingMouse==false &&
                   fabs(lastPosition.X-currentPosition.X) + 
                   fabs(lastPosition.Y-currentPosition.Y) + 
-                  fabs(lastPosition.Z-currentPosition.Z) < 20))) {
+                  fabs(lastPosition.Z-currentPosition.Z) < 10))) { // line end
             drawing = false;
             
             printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition.X,lastPosition.Y,lastPosition.Z);
             currentLine.compileLine();
-            lines.Add(currentLine);            
-        } else if(drawing) {
+            lines.Add(currentLine);
+        } else if(drawing) { // line mid
             currentLine.linePoints.Add(currentPosition, currentPositionProj);
         }
         lastPosition = joint.position;
@@ -479,9 +458,9 @@ void RenderLumen() {
         for(int l = 0; l < lines.Count(); l++) lines[l].renderLine();
         if(drawing) currentLine.renderLine();
         
-        if(g_bDrawSkeleton) {
+        if(drawSkeleton) {
             glBegin(GL_LINES);
-            glColor4f(1-Colors[aUsers[i]%nColors][0], 1-Colors[aUsers[i]%nColors][1], 1-Colors[aUsers[i]%nColors][2], 1);
+            glColor4f(1,1,1,1);
 
             DrawLimb(aUsers[i], XN_SKEL_LEFT_ELBOW, XN_SKEL_LEFT_HAND);
             DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
@@ -490,5 +469,4 @@ void RenderLumen() {
 
         headpos = GetLimbPosition(aUsers[i], XN_SKEL_HEAD);
     }
-    glEnable(GL_TEXTURE_2D);
 }

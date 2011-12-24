@@ -75,7 +75,7 @@ public:
                 avg += items[items.size()-i].thickness;
             }
             item.thickness = avg/(i+2);
-        }*/
+        }//*/
     
         //Add the item to the container
         items.push_back(item); 
@@ -147,16 +147,15 @@ public:
         if(displayList != -1 && glIsList(displayList)) {
             glCallList(displayList);
         } else {
-            //r=1; g=0; b=0.3; 
-            a=0.55;a=0.8;
+            a=0.55;
             glColor4f(r, g, b, a);
             // Two-pass rendering - front/back
             glEnable(GL_CULL_FACE);
             for(int pass=0; pass<=1; pass++) {
                 if(pass==0) glCullFace(GL_FRONT); else glCullFace(GL_BACK);
-
+                
                 bool start = true, end = false;
-                            
+                
                 for(int p = 0; p < linePoints.Count()-1; p++) {
                     if(p==linePoints.Count()-2) end = true;
                     
@@ -165,8 +164,6 @@ public:
                     Vec3 vecB = lp2.projpoint;
                     
                     if(vecA.isZero() || vecB.isZero()) continue;
-                    
-                    //brush = 1;
                     
                     switch(brush) {
                         case 2: {
@@ -179,7 +176,7 @@ public:
                             float size = 3;
                             
                             Vec3 v[4];
-                            if(start == true) {
+                            if(start == true) { // start cap
                                 start = false;
                                 v[0] = vecA; v[0].x += +size*lp1.thickness; v[0].y += +size*lp1.thickness;
                                 v[1] = vecA; v[1].x += -size*lp1.thickness; v[1].y += +size*lp1.thickness;
@@ -206,7 +203,7 @@ public:
                                 
                                 for(int k=0; k<4; k++) glVertex3f(v[k].x, v[k].y, v[k].z);
                             }
-                            if(end == true) {
+                            if(end == true) { // end cap
                                 end = false;
                                 v[0] = vecB; v[0].x += +size*lp2.thickness; v[0].y += +size*lp2.thickness;
                                 v[1] = vecB; v[1].x += -size*lp2.thickness; v[1].y += +size*lp2.thickness;
@@ -226,10 +223,11 @@ public:
                             glBegin(GL_QUADS);
                             Vec3 n = vecA.cross(vecB); n.normalize();
                             glNormal3f(n.x, n.y, n.z);
-                            glVertex3f(vecA.x+4, vecA.y, vecA.z);
-                            glVertex3f(vecA.x-4, vecA.y, vecA.z);
-                            glVertex3f(vecB.x-4, vecB.y, vecB.z);
-                            glVertex3f(vecB.x+4, vecB.y, vecB.z);
+                            float size = 4;
+                            glVertex3f(vecA.x+size*lp1.thickness, vecA.y, vecA.z);
+                            glVertex3f(vecA.x-size*lp1.thickness, vecA.y, vecA.z);
+                            glVertex3f(vecB.x-size*lp2.thickness, vecB.y, vecB.z);
+                            glVertex3f(vecB.x+size*lp2.thickness, vecB.y, vecB.z);
                             glEnd();
                             break;
                         } case 0:default: {
@@ -239,15 +237,13 @@ public:
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 10;
-                            //if(currentBrush == 1) polycount = 8;
+                            int polycount = 20;
                             
-                            if(start == true) {
+                            if(start == true) { // start cap
                                 start = false;
                                 glPushMatrix();
                                 glTranslatef(vecA.x,vecA.y,vecA.z);
                                 glRotatef(angle,cross.x,cross.y,cross.z);
-                                //glColor4f(r, g, b, a);
                                 gluSphere(quadric, size*lp1.thickness, polycount,polycount);
                                 glPopMatrix();
                             }
@@ -255,10 +251,8 @@ public:
                             glPushMatrix();
                             glTranslatef(vecB.x,vecB.y,vecB.z);
                             glRotatef(angle,cross.x,cross.y,cross.z);
-                            //glColor4f(r, g, b, a);
                             gluCylinder(quadric, size*lp1.thickness, size*lp2.thickness, d.length(), polycount,3);
-                            //glColor4f(r, g, b, a);
-                            gluSphere(quadric, size*lp2.thickness, polycount,polycount);
+                            gluSphere(quadric, size*lp2.thickness, polycount,polycount); // mid/end cap
                             glPopMatrix();
                             break;
                         }

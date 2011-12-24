@@ -4,14 +4,15 @@
 #include <ni/XnOpenNI.h>
 #include <ni/XnCodecIDs.h>
 #include <ni/XnCppWrapper.h>
-#include "SceneDrawer.h"
+#include "LumenRender.h"
+#include "Utils.h"
 #include <GL/glut.h>
 #include <map>
 #include <time.h>
 
-//
+//---------------------------------------------------------------------------
 // Trackpad
-//
+//---------------------------------------------------------------------------
 #include <nite/XnVHandPointContext.h>
 #include <nite/XnVSessionManager.h>
 #include <nite/XnVSelectableSlider2D.h>
@@ -118,21 +119,15 @@ xn::Player g_Player;
 
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
-XnBool g_bDrawBackground = TRUE;
-XnBool g_bDrawPixels = TRUE;
-XnBool g_bDrawSkeleton = TRUE;
-XnBool g_bPrintID = TRUE;
-XnBool g_bPrintState = TRUE;
-XnBool g_bPause = FALSE;
-XnBool g_bQuit = FALSE;
-XnBool g_bRotate = FALSE;
-XnBool g_bLookFromHead = TRUE;
+XnBool drawSkeleton = TRUE;
+XnBool quitRequested = FALSE;
+XnBool headView = TRUE;
 XnBool g_bClear = FALSE;
-XnBool g_bMouseDown = FALSE;
-XnBool g_bUseMouse = TRUE;
+XnBool isMouseDown = FALSE;
+XnBool isUsingMouse = TRUE;
 int g_TestVar = -2;
 int currentBrush = 0;
-XnUInt32 g_nCurrentUser = -1;
+XnUInt32 currentUser = -1;
 
 
 //---------------------------------------------------------------------------
@@ -141,28 +136,15 @@ XnUInt32 g_nCurrentUser = -1;
 void CleanupExit() {
     //trackpad
     if(NULL != g_pTrackPad) {
-        // Unregister for the Hover event of the TrackPad
-        if(NULL != g_nItemHoverHandle)
-          g_pTrackPad->UnregisterItemHover(g_nItemHoverHandle);
-        // Unregister for the Value Change event of the TrackPad
-        if(NULL != g_nValueChangeHandle)
-          g_pTrackPad->UnregisterValueChange(g_nValueChangeHandle);
-
-        // Unregister for the Select event of the TrackPad
-        if (NULL != g_nItemSelectHandle)
-            g_pTrackPad->UnregisterItemSelect(g_nItemSelectHandle);
-
-        // Unregister for Input Stop event of the TrackPad
-        if(NULL != g_nPrimaryDestroyHandle)
-              g_pTrackPad->UnregisterPrimaryPointDestroy(g_nPrimaryDestroyHandle);
-            // Unregister for Input Start event of the TrackPad
-            if(NULL != g_nPrimaryCreateHandle)
-              g_pTrackPad->UnregisterPrimaryPointCreate(g_nPrimaryCreateHandle);
+        if(NULL != g_nItemHoverHandle) g_pTrackPad->UnregisterItemHover(g_nItemHoverHandle);
+        if(NULL != g_nValueChangeHandle) g_pTrackPad->UnregisterValueChange(g_nValueChangeHandle);
+        if(NULL != g_nItemSelectHandle) g_pTrackPad->UnregisterItemSelect(g_nItemSelectHandle);
+        if(NULL != g_nPrimaryDestroyHandle) g_pTrackPad->UnregisterPrimaryPointDestroy(g_nPrimaryDestroyHandle);
+        if(NULL != g_nPrimaryCreateHandle) g_pTrackPad->UnregisterPrimaryPointCreate(g_nPrimaryCreateHandle);
     }
 
-    if (NULL != g_pSessionManager)  {
-        if(0 != g_TrackPadHandle)
-          g_pSessionManager->RemoveListener(g_TrackPadHandle);
+    if(NULL != g_pSessionManager) {
+        if(0 != g_TrackPadHandle) g_pSessionManager->RemoveListener(g_TrackPadHandle);
         delete g_pSessionManager;
         g_pSessionManager = NULL;
     }
@@ -187,18 +169,15 @@ void CleanupExit() {
 void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
     printf("New User %d\n", nId);
     // New user found
-    if(g_bNeedPose) {
+    if(g_bNeedPose) 
         g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
-    } else {
+    else
         g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
-    }
 }
 // Callback: An existing user was lost
 void XN_CALLBACK_TYPE User_LostUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
     printf("Lost user %d\n", nId);
-    if(nId == g_nCurrentUser) {
-        g_nCurrentUser = -1;
-    }
+    if(nId == currentUser) currentUser = -1;
 }
 // Callback: Detected a pose
 void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& capability, const XnChar* strPose, XnUserID nId, void* pCookie) {
@@ -219,11 +198,10 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& cap
     } else {
         // Calibration failed
         printf("Calibration failed for user %d\n", nId);
-        if(g_bNeedPose) {
+        if(g_bNeedPose)
             g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
-        } else {
+        else
             g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
-        }
     }
 }
 
@@ -232,15 +210,14 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationComplete(xn::SkeletonCapability
         // Calibration succeeded
         printf("Calibration complete, start tracking user %d\n", nId);
         g_UserGenerator.GetSkeletonCap().StartTracking(nId);
-        g_nCurrentUser = nId;
+        currentUser = nId;
     } else {
         // Calibration failed
         printf("Calibration failed for user %d\n", nId);
-        if(g_bNeedPose) {
+        if(g_bNeedPose)
             g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
-        } else {
+        else
             g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
-        }
     }
 }
 
@@ -294,14 +271,14 @@ void glutDisplay(void) {
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     g_Context.WaitAnyUpdateAll();
     g_pSessionManager->Update(&g_Context);
-
-    RenderLumen();
-
+    
+    renderLumen();
+    
     glutSwapBuffers();
 }
 
 void glutIdle(void) {
-    if(g_bQuit) CleanupExit();
+    if(quitRequested) CleanupExit();
 
     // Display the frame
     glutPostRedisplay();
@@ -309,47 +286,35 @@ void glutIdle(void) {
 
 void glutKeyboard(unsigned char key, int x, int y) {
     switch (key) {
-        case  27: g_bQuit = !g_bQuit; break;
-        case 'b': g_bDrawBackground = !g_bDrawBackground; break;
-        case 'x': g_bDrawPixels = !g_bDrawPixels; break;
-        case 's': g_bDrawSkeleton = !g_bDrawSkeleton; break;
-        case 'i': g_bPrintID = !g_bPrintID; break;
-        case 'l': g_bPrintState = !g_bPrintState; break;
-        case 'p': g_bPause = !g_bPause; break;
-        case 'r': g_bRotate = !g_bRotate; break;
+        case  27: quitRequested = true; break;
+        case 's': drawSkeleton= !drawSkeleton; break;
         case 'S': SaveCalibration(); break;
         case 'L': LoadCalibration(); break;
-        case 'h': g_bLookFromHead = !g_bLookFromHead; break;
+        case 'h': headView = !headView; break;
         case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'1'; break;
         case 'c': g_bClear = true; break;
-        case 'm': g_bUseMouse = !g_bUseMouse; break;
+        case 'm': isUsingMouse = !isUsingMouse; break;
     }
 }
 
-void randomcolor(float& r, float& g, float& b) {
-    r = (float)rand()/(float)RAND_MAX;
-    g = (float)rand()/(float)RAND_MAX;
-    b = (float)rand()/(float)RAND_MAX;
-    if(r+b+g < 1 || r+b+g > 2.5 || (fabs(r-g)<0.1 && fabs(b-g)<0.1) ) randomcolor(r,g,b);
-}
 float rr=0,gg=0,bb=0;
 void processMouse(int button, int state, int x, int y) {
     if(state == GLUT_DOWN) {
         if (button == GLUT_LEFT_BUTTON) {
-			g_bMouseDown = TRUE;
-			if(rr==0&&gg==0&&bb==0) randomcolor(rr,gg,bb);
-		} else if (button == GLUT_RIGHT_BUTTON) {
-		    currentBrush = (currentBrush+1)%3;
-		} else if (button == GLUT_MIDDLE_BUTTON) {
-		    randomcolor(rr,gg,bb);		    
-		}
-		/*else if (button == 4) {//UP
-		    colori += (colori+1)%colorCount
+            isMouseDown = TRUE;
+            if(rr==0&&gg==0&&bb==0) randomColor(rr,gg,bb);
+        } else if (button == GLUT_RIGHT_BUTTON) {
+            currentBrush = (currentBrush+1)%3;
+        } else if (button == GLUT_MIDDLE_BUTTON) {
+            randomColor(rr,gg,bb);
+        }
+        /*else if (button == 4) {//UP
+            colori += (colori+1)%colorCount
         } else if if (button == 3) {//DOWN
-		    colori += (colori+1)%colorCount		
+            colori += (colori+1)%colorCount
         }*/
     } else {
-        g_bMouseDown = FALSE;
+        isMouseDown = FALSE;
     }
 }
 
@@ -358,28 +323,22 @@ void glInit(int* pargc, char** argv) {
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_MULTISAMPLE);
     glutInitWindowSize(640, 480);
     glutCreateWindow ("Lumen");
-    //glutFullScreen();
+    glutFullScreen();
     glutSetCursor(GLUT_CURSOR_NONE);
-    randomcolor(rr,gg,bb);
+    randomColor(rr,gg,bb);
     
-    glutKeyboardFunc(glutKeyboard);
     glutDisplayFunc(glutDisplay);
     glutIdleFunc(glutIdle);
+    glutKeyboardFunc(glutKeyboard);
+    glutMouseFunc(processMouse);
+    //glutMotionFunc(processMouseActiveMotion);
+    //glutPassiveMotionFunc(processMousePassiveMotion);
+    //glutEntryFunc(processMouseEntry);
 
-	glutMouseFunc(processMouse);
-	//glutMotionFunc(processMouseActiveMotion);
-	//glutPassiveMotionFunc(processMousePassiveMotion);
-	//glutEntryFunc(processMouseEntry);
-
-    glEnable( GL_MULTISAMPLE );
+    glEnable(GL_MULTISAMPLE);
     glEnableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_COLOR_ARRAY);
     
-    // Cull back faces
-    //glEnable(GL_CULL_FACE);
-    //glCullFace(GL_BACK);
-    
-
     // Opacity
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -388,9 +347,9 @@ void glInit(int* pargc, char** argv) {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     GLfloat position[] = {150,385,1000, 0.0};
-    GLfloat ambient[] = { 0.1, 0.1, 0.1, 1};
-    GLfloat diffuse[] = { 1, 1, 1, 1};
-    GLfloat specular[] = { 0, 0, 0, 1};
+    GLfloat ambient[] = {0.1, 0.1, 0.1, 1};
+    GLfloat diffuse[] = {1, 1, 1, 1};
+    GLfloat specular[] = {0, 0, 0, 1};
     glLightfv(GL_LIGHT0, GL_POSITION, position);
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
@@ -412,7 +371,7 @@ void glInit(int* pargc, char** argv) {
     //glDepthFunc(GL_LESS);
     glShadeModel(GL_SMOOTH);
     
-    glEnable(GL_TEXTURE_2D);    
+    glEnable(GL_TEXTURE_2D);
 }
 
 #define SAMPLE_XML_PATH "../../SamplesConfig.xml"
@@ -423,9 +382,8 @@ void glInit(int* pargc, char** argv) {
         return nRetVal;                                              \
     }
 
-
 int main(int argc, char** argv) {
-    srand ( time(NULL) );
+    srand(time(NULL));
     XnStatus nRetVal = XN_STATUS_OK;
     
     if(argc > 1) {
@@ -491,7 +449,7 @@ int main(int argc, char** argv) {
     CHECK_RC(nRetVal, "Register to calibration complete");
 
     if(g_UserGenerator.GetSkeletonCap().NeedPoseForCalibration()) {
-        g_bNeedPose = TRUE;
+        g_bNeedPose = FALSE;
         if(!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_POSE_DETECTION)) {
             printf("Pose required, but not supported\n");
             return 1;
@@ -514,7 +472,7 @@ int main(int argc, char** argv) {
     
     //trackpad
     // Initialize the point tracker
-    XnStatus rc = g_pSessionManager->Initialize(&g_Context, "Wave,Click", "RaiseHand");
+    XnStatus rc = g_pSessionManager->Initialize(&g_Context, "Wave,RaiseHand,Click", "Wave,RaiseHand,Click");
     if (rc != XN_STATUS_OK) {
         printf("Couldn't initialize the Session Manager: %s\n", xnGetStatusString(rc));
         CleanupExit();
