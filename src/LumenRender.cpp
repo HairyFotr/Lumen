@@ -9,9 +9,11 @@
 #include <GL/glut.h>
 #include <GL/glu.h>
 #include <GL/gl.h>
+#ifdef LUMEN_CAMERA
 #include <opencv/cv.h>
 #include <opencv/cxcore.h>
 #include <opencv/highgui.h>
+#endif
 #include <stdio.h>
 #include <string>
 #include <map>
@@ -26,16 +28,14 @@ using namespace std;
 
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
-//extern xn::ImageGenerator g_ImageGenerator;
 
-extern XnBool drawSkeleton;
-extern XnBool headView;
-extern XnBool g_bClear;
-extern int g_TestVar;
+extern bool drawSkeleton;
+extern bool headView;
+extern bool doClear;
 extern int currentBrush;
 extern XnUInt32 currentUser;
-extern XnBool isMouseDown;
-extern XnBool isUsingMouse;
+extern bool isMouseDown;
+extern bool isUsingMouse;
 extern float rr;
 extern float gg;
 extern float bb;
@@ -376,7 +376,7 @@ void renderLumen() {
     glVertex3f(5,5, 0.0);
     glEnd();
 
-    renderTrackPad();
+    //renderTrackPad();
 
     glEnable(GL_LIGHTING);
     glEnable(GL_DEPTH_TEST);
@@ -401,8 +401,8 @@ void renderLumen() {
         glRotatef(rot,0,1,0);
     }*/
 
-    if(g_bClear) {
-        g_bClear = false;
+    if(doClear) {
+        doClear = false;
         drawing = false;
         lines.Clear();
     }

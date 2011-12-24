@@ -110,19 +110,17 @@ void XN_CALLBACK_TYPE SessionEnd(void* UserCxt) {
 //---------------------------------------------------------------------------
 // Globals
 //---------------------------------------------------------------------------
-//xn::Context g_Context;
-//xn::ScriptNode g_ScriptNode;
 xn::DepthGenerator g_DepthGenerator;
-/////xn::ImageGenerator g_ImageGenerator;
 xn::UserGenerator g_UserGenerator;
 xn::Player g_Player;
 
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
+
 XnBool drawSkeleton = TRUE;
 XnBool quitRequested = FALSE;
 XnBool headView = TRUE;
-XnBool g_bClear = FALSE;
+XnBool doClear = FALSE;
 XnBool isMouseDown = FALSE;
 XnBool isUsingMouse = TRUE;
 int g_TestVar = -2;
@@ -292,7 +290,7 @@ void glutKeyboard(unsigned char key, int x, int y) {
         case 'L': LoadCalibration(); break;
         case 'h': headView = !headView; break;
         case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'1'; break;
-        case 'c': g_bClear = true; break;
+        case 'c': doClear = true; break;
         case 'm': isUsingMouse = !isUsingMouse; break;
     }
 }

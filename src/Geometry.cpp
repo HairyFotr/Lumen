@@ -147,7 +147,7 @@ public:
         if(displayList != -1 && glIsList(displayList)) {
             glCallList(displayList);
         } else {
-            a=0.55;
+            a=0.5;
             glColor4f(r, g, b, a);
             // Two-pass rendering - front/back
             glEnable(GL_CULL_FACE);
@@ -190,7 +190,7 @@ public:
                                 
                                 for(int k=0; k<4; k++) glVertex3f(v[k].x, v[k].y, v[k].z);
                             }
-                            for(int i=0; i<4*4; i+=4) {
+                            for(int i=0; i<4*4; i+=4) { // middle
                                 v[0] = vecA; v[0].x += size*lp1.thickness*s[i+0]; v[0].y += size*lp1.thickness*s[i+1];
                                 v[1] = vecA; v[1].x += size*lp1.thickness*s[i+2]; v[1].y += size*lp1.thickness*s[i+3];
                                 v[2] = vecB; v[2].x += size*lp2.thickness*s[i+2]; v[2].y += size*lp2.thickness*s[i+3];
@@ -262,14 +262,10 @@ public:
             glDisable(GL_CULL_FACE);
         }
     }
-    /*int Add(Vec3 p, Vec3 pp) { return linePoints.Add(LinePoint(p, pp)); }
-    int Add(XnPoint3D p, XnPoint3D pp) { return Add(Vec3(p.X,p.Y,p.Z), Vec3(pp.X,pp.Y,pp.Z)); }
-    LinePoint& operator [](int ItemKey) { return linePoints[ItemKey]; }*/
 };
 
 class Lines {
 protected:
-    //The Vector container that will hold the collection of Items
     vector<Line> items;
     
 public:
