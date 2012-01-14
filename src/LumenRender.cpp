@@ -2,18 +2,23 @@
 // Includes
 //---------------------------------------------------------------------------
 #define LUMEN_CAMERA //use camera
+//#define LUMEN_BACKDROP //use backdrop.jpg file instead of camera
+#define LUMEN_TRACKER //use the Wrap 920AR tracker 
 
 #include "LumenRender.h"
 #include "Geometry.cpp"
+#include "Smooth.cpp"
 #include "Utils.h"
 #include <GL/glut.h>
 #include <GL/glu.h>
 #include <GL/gl.h>
 #ifdef LUMEN_CAMERA
-#include <opencv/cv.h>
-#include <opencv/cxcore.h>
-#include <opencv/highgui.h>
+#include <core/core.hpp>
+#include <highgui/highgui.hpp>
 #endif
+#include <iostream>
+#include <iomanip>
+#include <fstream>
 #include <stdio.h>
 #include <string>
 #include <map>
@@ -30,6 +35,7 @@ extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
 
 extern bool drawSkeleton;
+extern bool drawSquare;
 extern bool headView;
 extern bool doClear;
 extern int currentBrush;
@@ -42,219 +48,77 @@ extern float bb;
 
 GLUquadricObj* quadric;
 
-//---------------------------------------------------------------------------
-//trackpad
-//---------------------------------------------------------------------------
-#include <XnVHandPointContext.h>
-#include <XnVSessionManager.h>
-#include <XnVSelectableSlider2D.h>
+#ifdef LUMEN_TRACKER
+float initPitch, initYaw, initRoll;
+SmoothData *Pitch, *Yaw, *Roll;
 
-extern XnBool g_bActive;
-extern XnBool g_bIsInput;
-extern XnBool g_bInSession;
-extern XnBool g_bIsPushed;
-extern XnUInt32 g_nCurrentFrame;
+char* trackerData = new char[42];
+bool trackerInit = false;
+bool trackerLock = false;
+boost::thread trackerThread;
+ifstream file;
 
-const XnUInt32 XN_PUSH_DISPLAY_FRAMES = 30;
-
-extern XnFloat g_fXValue;
-extern XnFloat g_fYValue;
-
-extern XnUInt32 g_nXIndex;
-extern XnUInt32 g_nYIndex;
-
-extern XnUInt32 g_TP_XDim;
-extern XnUInt32 g_TP_YDim;
-
-const XnFloat GL_WIN_SIZE_X = 640.0;
-const XnFloat GL_WIN_SIZE_Y = 480.0;
-
-extern XnVSelectableSlider2D* g_pTrackPad;
-extern XnVSessionManager* g_pSessionManager;
-
-extern XnCallbackHandle g_nItemHoverHandle;
-extern XnCallbackHandle g_nItemSelectHandle;
-extern XnCallbackHandle g_nValueChangeHandle;
-
-extern XnCallbackHandle g_nPrimaryCreateHandle;
-extern XnCallbackHandle g_nPrimaryDestroyHandle;
-
-extern XnUInt32 g_TrackPadHandle;
-
-extern XnBool g_isPrintItemHover;
-extern XnBool g_isPrintValueChange;
-extern XnBool g_isInputStarted;
-
-extern XnPoint3D CurrentItem;
-
-// Drawing functions
-void DrawLine(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r = 1, double g = 1, double b = 1) {
-    const GLubyte ind[2] = {0, 1};
-    GLfloat verts[6] = { ptMins.X, ptMins.Y, ptMins.Z, ptMaxs.X, ptMaxs.Y, ptMaxs.Z };
-    glColor4f(r,g,b,1.0f);
-    glVertexPointer(3, GL_FLOAT, 0, verts);
-    glLineWidth(width);
-    glDrawArrays(GL_LINES, 0, 2);
-    glFlush();
+union mix_t {
+  int16_t i;
+  struct {
+    char a;
+    char b;
+  } s;
+} uni;
+int getInt(char* pos) {
+    uni.s.a = *(pos);
+    uni.s.b = *(pos+1);
+    int res = uni.i;
+    return res;
 }
-
-void DrawFrame(const XnPoint3D& ptMins, const XnPoint3D& ptMaxs, int width, double r, double g, double b) {
-    XnPoint3D ptTopLeft = ptMins;
-    XnPoint3D ptBottomRight = ptMaxs;
-
-    // Top line
-    DrawLine(xnCreatePoint3D(ptTopLeft.X, ptTopLeft.Y, 0),
-        xnCreatePoint3D(ptBottomRight.X, ptTopLeft.Y, 0),
-        width, r, g, b);
-    // Right Line
-    DrawLine(xnCreatePoint3D(ptBottomRight.X, ptTopLeft.Y, 0),
-        xnCreatePoint3D(ptBottomRight.X, ptBottomRight.Y,0),
-        width, r, g, b);
-    // Bottom Line
-    DrawLine(xnCreatePoint3D(ptBottomRight.X, ptBottomRight.Y,0),
-        xnCreatePoint3D(ptTopLeft.X, ptBottomRight.Y,0),
-        width, r, g, b);
-    // Left Line
-    DrawLine(xnCreatePoint3D(ptTopLeft.X, ptBottomRight.Y,0),
-        xnCreatePoint3D(ptTopLeft.X, ptTopLeft.Y,0),
-        width, r, g, b);
-}
-
-// More drawing
-void renderTrackPad() {
-    if(!g_bInSession) return;
-  
-    XnDouble r, g, b;
-
-    if(!g_bActive) {
-        r = g = b = 1;
-    } else if(!g_bIsInput) {
-        r = g = b = 0.5;
-    } else {
-        r = b = 0;
-        g = 1;
-    }
-
-
-  XnFloat width = 20;
-  XnFloat x_step = (XnFloat)GL_WIN_SIZE_X/g_TP_XDim;
-  for(XnUInt32 i=0 ; i<=g_TP_XDim ; ++i) {
-    DrawLine(xnCreatePoint3D(GL_WIN_SIZE_X-(i*x_step), GL_WIN_SIZE_Y, 0.0),
-      xnCreatePoint3D(GL_WIN_SIZE_X-(i*x_step), 0.0, 0.0),
-      width, r, g, b);
-  }
-
-  XnFloat y_step = (XnFloat)GL_WIN_SIZE_Y/g_TP_YDim;
-  for(XnUInt32 j=1 ; j<=g_TP_YDim ; ++j) {
-    DrawLine(xnCreatePoint3D(GL_WIN_SIZE_X, GL_WIN_SIZE_Y-(j*y_step), 0.0),
-     xnCreatePoint3D(0.0, GL_WIN_SIZE_Y-(j*y_step), 0.0),
-     width, r, g, b); 
-  }
-
-  if(TRUE == g_isPrintItemHover) {
-    XnPoint3D ptTopLeft = xnCreatePoint3D((CurrentItem.X*x_step), /*GL_WIN_SIZE_Y-*/(CurrentItem.Y*y_step), 0.0);
-    XnPoint3D ptBottomRight = xnCreatePoint3D(((CurrentItem.X+1)*x_step), /*GL_WIN_SIZE_Y-*/((CurrentItem.Y+1)*y_step), 0.0);
-
-    if(TRUE == g_isInputStarted)
-      DrawFrame(ptTopLeft, ptBottomRight, width, 1, 1, 0);
-    else
-      DrawFrame(ptTopLeft, ptBottomRight, width, 0.2, 0.2, 0);
-  }
-
-  width /= 2;
-  if(TRUE == g_isPrintValueChange) {
-    XnFloat TopPointX = (g_fXValue)*GL_WIN_SIZE_X;
-    XnFloat TopPointY = (g_fYValue)*GL_WIN_SIZE_Y;
-    XnPoint3D ptTopLeft = xnCreatePoint3D(TopPointX, TopPointY, 0.0);
-    XnPoint3D ptBottomRight = xnCreatePoint3D(TopPointX+width, TopPointY+width, 0.0);
-
-    if(TRUE == g_isInputStarted)
-      DrawFrame(ptTopLeft, ptBottomRight, width, 1, 0, 0);
-    else
-      DrawFrame(ptTopLeft, ptBottomRight, width, 0.2, 0, 0);
-  }
-
-  if(TRUE == g_bIsPushed) {
-    XnPoint3D ptTopLeft = xnCreatePoint3D((CurrentItem.X*x_step), (CurrentItem.Y*y_step), 0.0);
-    XnPoint3D ptBottomRight = xnCreatePoint3D(((CurrentItem.X+1)*x_step), ((CurrentItem.Y+1)*y_step), 0.0);
-    DrawFrame(ptTopLeft, ptBottomRight, width, 1, 0.5, 0);
-
-    ++g_nCurrentFrame;
-    if(XN_PUSH_DISPLAY_FRAMES <= g_nCurrentFrame) {
-      g_bIsPushed = FALSE;
-      g_nCurrentFrame = 0;
-    }
-  }
-}
-
-//
-// end trackpad
-//
-
-void glPrintString(void *font, char *str) {
-    int i,l = strlen(str);
-
-    for(i=0; i<l; i++) glutBitmapCharacter(font,*str++);
-}
-
-XnPoint3D GetLimbPosition(XnUserID player, XnSkeletonJoint eJoint) {
-    XnSkeletonJointPosition joint;
-    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint, joint);
-
-    XnPoint3D pt = joint.position;
-
-    g_DepthGenerator.ConvertRealWorldToProjective(1, &pt, &pt);
-    return pt;
-}
-
-void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
-    if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
-    
-    XnSkeletonJointPosition joint1, joint2;
-    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint1, joint1);
-    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint2, joint2);
-    
-    if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
-    
-    XnPoint3D pt[2] = {joint1.position, joint2.position};
-        
-    g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
-    glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
-    glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);
-}
-
-const XnChar* GetCalibrationErrorString(XnCalibrationStatus error) {
-    switch (error) {
-        case XN_CALIBRATION_STATUS_OK: return "OK";
-        case XN_CALIBRATION_STATUS_NO_USER: return "NoUser";
-        case XN_CALIBRATION_STATUS_ARM: return "Arm";
-        case XN_CALIBRATION_STATUS_LEG: return "Leg";
-        case XN_CALIBRATION_STATUS_HEAD: return "Head";
-        case XN_CALIBRATION_STATUS_TORSO: return "Torso";
-        case XN_CALIBRATION_STATUS_TOP_FOV: return "Top FOV";
-        case XN_CALIBRATION_STATUS_SIDE_FOV: return "Side FOV";
-        case XN_CALIBRATION_STATUS_POSE: return "Pose";
-        default: return "Unknown";
+void updateTracker() {
+    if(trackerInit) {
+        Pitch->insert((float)getInt(trackerData+2));
+        Yaw->insert((float)getInt(trackerData+4));
+        Roll->insert((float)getInt(trackerData+6));
     }
 }
-const XnChar* GetPoseErrorString(XnPoseDetectionStatus error) {
-    switch (error) {
-        case XN_POSE_DETECTION_STATUS_OK: return "OK";
-        case XN_POSE_DETECTION_STATUS_NO_USER: return "NoUser";
-        case XN_POSE_DETECTION_STATUS_TOP_FOV: return "Top FOV";
-        case XN_POSE_DETECTION_STATUS_SIDE_FOV: return "Side FOV";
-        case XN_POSE_DETECTION_STATUS_ERROR: return "General error";
-        default: return "Unknown";
+void readTracker() {
+    if(trackerInit) {
+        while(true) {
+            trackerLock=true;
+            file.read(trackerData, 42);
+            updateTracker();
+            trackerLock=false;
+            //usleep(10*1000);
+        }
     }
 }
 
-XnPoint3D lastPosition, lastPositionProj;
-bool drawing = false;
-
-Line currentLine;
-Lines lines;
-
-bool lumenInit = false;
+// yes I know this is horrible - fileRead blocks if no data.
+boost::thread firstReadThread;
+void firstRead() {
+    file.read(trackerData, 42);
+    if(getInt(trackerData)==-32767) {  
+        int smoothlen=20;      
+        Pitch = new SmoothData((float)getInt(trackerData+2),smoothlen,1);
+        Yaw = new SmoothData((float)getInt(trackerData+4),smoothlen,1);
+        Roll = new SmoothData((float)getInt(trackerData+6),smoothlen,1);
+        trackerInit = true;
+        for(int i=0; i<smoothlen; i++) {
+            file.read(trackerData, 42);
+            updateTracker();
+        }
+        initPitch = Pitch->get();
+        initYaw = Yaw->get();
+        initRoll = Roll->get();
+        trackerThread = boost::thread(readTracker);
+    }
+}
+void initTracker() {
+    file.open("/dev/hidraw5", ios::in|ios::binary);
+    usleep(1000*1000);
+    if(file.is_open()) {
+        file.rdbuf()->pubsetbuf(0, 0);
+        firstReadThread = boost::thread(firstRead);
+    }
+}
+#endif
 
 #ifdef LUMEN_CAMERA
 cv::VideoCapture cap;
@@ -265,8 +129,12 @@ boost::thread camThread;
 bool cameraInit = false;
 bool cameraLock = false;
 void initCamera() {
+    #ifdef LUMEN_BACKDROP
+    frame = cv::imread("backdrop.jpg");
+    #else
     cap.open(-1);
     cap >> frame;
+    #endif
     if(frame.data) {
         size = frame.size();
     
@@ -283,25 +151,38 @@ void initCamera() {
         glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
         glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
+        if(frame.channels() == 3)
+            glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGB, size.width,size.height, 0,GL_BGR,GL_UNSIGNED_BYTE, frame.data);
+        else if(frame.channels() == 4)
+            glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGBA, size.width,size.height, 0,GL_BGRA,GL_UNSIGNED_BYTE, frame.data);
+
         cameraInit = true;
     }
 }
 void readCamera() {
-    if(cameraInit==true) cap >> frame;
+    if(cameraInit==true) {
+        #ifdef LUMEN_BACKDROP
+        #else
+        cap >> frame;
+        #endif
+    }
     cameraLock = false;
 }
 void updateCamera() {
+    #ifdef LUMEN_BACKDROP
+    #else
     if(!cameraLock) {
         cameraLock = true;
         camThread.join();
         if(frame.data) {
             if(frame.channels() == 3)
-                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGB, size.width, size.height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data);
+                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGB, size.width,size.height, 0,GL_BGR,GL_UNSIGNED_BYTE, frame.data);
             else if(frame.channels() == 4)
-                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, size.width, size.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, frame.data);
+                glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGBA, size.width,size.height, 0,GL_BGRA,GL_UNSIGNED_BYTE, frame.data);
         }
         camThread = boost::thread(readCamera);
     }
+    #endif
 }
 void renderCamera() {
     glDisable(GL_DEPTH_TEST);
@@ -330,23 +211,63 @@ void renderCamera() {
 }
 #endif
 
-XnPoint3D headpos;
+SmoothPoint *headpos;
+SmoothPoint *lastPosition;
+SmoothPoint *lastPositionProj;
+bool drawingLine = false;
+
+Line currentLine;
+Lines lines;
+
+bool firstRender = true;
+bool firstUser = true;
+
+void glPrintString(void *font, char *str) {
+    int i,l = strlen(str);
+
+    for(i=0; i<l; i++) glutBitmapCharacter(font,*str++);
+}
+
+XnPoint3D GetLimbPosition(XnUserID player, XnSkeletonJoint eJoint) {
+    XnSkeletonJointPosition joint;
+    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint, joint);
+    
+    return joint.position;
+}
+XnPoint3D getProj(XnPoint3D current) {
+    XnPoint3D proj = xnCreatePoint3D(3,3,3);
+    g_DepthGenerator.ConvertRealWorldToProjective(1, &current, &proj);
+    return proj;
+}
+void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
+    if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
+    
+    XnSkeletonJointPosition joint1, joint2;
+    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint1, joint1);
+    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint2, joint2);
+    
+    if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
+    
+    XnPoint3D pt[2] = {joint1.position, joint2.position};
+        
+    g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
+    glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
+    glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);
+}
 
 void renderLumen() {
-    if(!lumenInit) {
-        lumenInit = true;
-        
+    if(firstRender) {
         // init quadric object
         quadric = gluNewQuadric();
         gluQuadricNormals(quadric, GLU_SMOOTH);
-
+        
         // init camera and its texture
         #ifdef LUMEN_CAMERA
         initCamera();
         #endif
-        
-        // init head position
-        headpos = xnCreatePoint3D(0, 0, 0);
+        #ifdef LUMEN_TRACKER
+        initTracker();
+        #endif
     }
     
     #ifdef LUMEN_CAMERA
@@ -369,12 +290,14 @@ void renderLumen() {
     } else {
         glColor4f(rr,gg,bb,1); //else glColor3f(0,1,0);
     }
-    glBegin(GL_QUADS);
-    glVertex3f(5,50, 0.0);
-    glVertex3f(50,50, 0.0);
-    glVertex3f(50,5, 0.0);
-    glVertex3f(5,5, 0.0);
-    glEnd();
+    if(drawSquare) {
+        glBegin(GL_QUADS);
+        glVertex3f(5,50, 0.0);
+        glVertex3f(50,50, 0.0);
+        glVertex3f(50,5, 0.0);
+        glVertex3f(5,5, 0.0);
+        glEnd();
+    }
 
     //renderTrackPad();
 
@@ -390,73 +313,64 @@ void renderLumen() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    //if(headView) {
-    gluLookAt(headpos.X,headpos.Y,headpos.Z,    // camera position
-              headpos.X,headpos.Y,headpos.Z-10, // look-at vector
+    #ifdef LUMEN_TRACKER
+    if(trackerInit) {
+        glRotatef((Yaw->get()-initYaw)/7,0,1,0);
+        glRotatef((Roll->get()-initRoll)/7,0,0,1);
+        glRotatef((Pitch->get()-initPitch)/7,1,0,0);
+    }
+    #endif
+    if(headpos != NULL) {
+    gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
+              headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
               0.0,-1.0,0.0);// up vector 
-    /*} else {
-        gluLookAt(900.0,0.0,900.0,
-                  0.0,0.0,0.0,
-                  0.0,-1.0,0.0);
-        glRotatef(rot,0,1,0);
-    }*/
+    }
 
     if(doClear) {
         doClear = false;
-        drawing = false;
+        drawingLine = false;
         lines.Clear();
     }
     
     XnUserID aUsers[15];
     XnUInt16 nUsers = 15;
     g_UserGenerator.GetUsers(aUsers, nUsers);
-    headpos = xnCreatePoint3D(0, 0, 0);
 
     //for(int i = 0; i < nUsers; i++) {
     if(nUsers>0 && currentUser>=0 && currentUser<=nUsers) {
         int i = currentUser-1;
-        XnUserID player = aUsers[i];
-        XnSkeletonJoint eJoint = XN_SKEL_RIGHT_HAND;
+        XnPoint3D hand = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_HAND);
+        if(firstUser) {
+            lastPosition = new SmoothPoint(hand, 7, 2);
+            lastPositionProj = new SmoothPoint(getProj(hand), 7, 2);
+        } else {
+            lastPosition->insert(hand);
+            lastPositionProj->insert(getProj(hand));
+        }
         
-        XnSkeletonJointPosition joint;
-        g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint, joint);
-        
-        XnPoint3D currentPosition = joint.position;
-        XnPoint3D currentPositionProj; g_DepthGenerator.ConvertRealWorldToProjective(1, &currentPosition, &currentPositionProj);
-        
-        if(drawing==false && ((isUsingMouse==true && isMouseDown==true) 
-        ||(isUsingMouse==false &&  
-           fabs(lastPosition.X-currentPosition.X) + 
-           fabs(lastPosition.Y-currentPosition.Y) + 
-           fabs(lastPosition.Z-currentPosition.Z)/15 > 15))) { // line start
-            
+        if(drawingLine==false && isUsingMouse==true && isMouseDown==true) { // line start
             //start new line
-            drawing = true;
+            drawingLine = true;
             currentLine = Line(rr,gg,bb, currentBrush);
             
-            if(lastPosition.X!=0 && lastPosition.Y!=0 && lastPosition.Z!=0) {
-                currentLine.linePoints.Add(lastPosition, lastPositionProj);
+            if(lastPosition->X()!=0 && lastPosition->Y()!=0 && lastPosition->Z()!=0) {
+                currentLine.linePoints.Add(lastPosition->get(), lastPositionProj->get());
             }
-            currentLine.linePoints.Add(currentPosition, currentPositionProj);
             
-            printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(), lastPosition.X,lastPosition.Y,lastPosition.Z);
-        } else if(drawing==true && ((isUsingMouse==true && isMouseDown==false) 
-               ||(isUsingMouse==false &&
-                  fabs(lastPosition.X-currentPosition.X) + 
-                  fabs(lastPosition.Y-currentPosition.Y) + 
-                  fabs(lastPosition.Z-currentPosition.Z) < 10))) { // line end
-            drawing = false;
+            printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(), lastPosition->X(),lastPosition->Y(),lastPosition->Z());
+        } else if(drawingLine==true && isUsingMouse==true && isMouseDown==false) { // line end
+            drawingLine = false;
             
-            printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition.X,lastPosition.Y,lastPosition.Z);
+            printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition->X(),lastPosition->Y(),lastPosition->Z());
             currentLine.compileLine();
             lines.Add(currentLine);
-        } else if(drawing) { // line mid
-            currentLine.linePoints.Add(currentPosition, currentPositionProj);
+        } else if(drawingLine) { // line mid
+            currentLine.linePoints.Add(lastPosition->get(), lastPositionProj->get());
         }
-        lastPosition = joint.position;
         
+        // render lines
         for(int l = 0; l < lines.Count(); l++) lines[l].renderLine();
-        if(drawing) currentLine.renderLine();
+        if(drawingLine) currentLine.renderLine();
         
         if(drawSkeleton) {
             glBegin(GL_LINES);
@@ -467,6 +381,13 @@ void renderLumen() {
             glEnd();
         }
 
-        headpos = GetLimbPosition(aUsers[i], XN_SKEL_HEAD);
+        XnPoint3D head = getProj(GetLimbPosition(aUsers[i], XN_SKEL_HEAD));
+        if(firstUser) {
+            headpos = new SmoothPoint(head, 7, 2);
+        } else {
+            headpos->insert(head);
+        }
+        firstUser = false;
     }
+    firstRender = false;
 }

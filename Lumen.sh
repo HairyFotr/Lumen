@@ -1,5 +1,7 @@
 #!/bin/bash
 
+sudo echo "LUMEN!"
+
 if [ "$1" == "build" ]
 then
 	cd src
@@ -18,5 +20,5 @@ fi
 if [ "$out" == "0" ]
 then
 	cd bin/x86-Release
-	./Lumen
+	sudo ./Lumen
 fi

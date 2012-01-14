@@ -237,7 +237,7 @@ public:
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 20;
+                            int polycount = 36;
                             
                             if(start == true) { // start cap
                                 start = false;

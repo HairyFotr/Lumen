@@ -11,105 +11,10 @@
 #include <time.h>
 
 //---------------------------------------------------------------------------
-// Trackpad
-//---------------------------------------------------------------------------
-#include <nite/XnVHandPointContext.h>
-#include <nite/XnVSessionManager.h>
-#include <nite/XnVSelectableSlider2D.h>
-
-XnBool g_bActive = FALSE;
-XnBool g_bIsInput = FALSE;
-XnBool g_bInSession = FALSE;
-XnBool g_bIsPushed = FALSE;
-XnUInt32 g_nCurrentFrame = 0;
-
-XnFloat g_fXValue = 0.5f;
-XnFloat g_fYValue = 0.5f;
-
-XnUInt32 g_nXIndex = 0;
-XnUInt32 g_nYIndex = 0;
-
-XnUInt32 g_TP_XDim = 4;
-XnUInt32 g_TP_YDim = 9;
-
-const XnUInt32 XN_MIN_X_DIM = 2;
-const XnUInt32 XN_MAX_X_DIM = 12;
-const XnUInt32 XN_MIN_Y_DIM = 2;
-const XnUInt32 XN_MAX_Y_DIM = 12;
-//
-xn::Context g_Context;
-xn::ScriptNode g_ScriptNode;
-XnVSelectableSlider2D* g_pTrackPad = NULL;
-XnVSessionManager* g_pSessionManager = NULL;
-
-XnCallbackHandle g_nItemHoverHandle = NULL;
-XnCallbackHandle g_nItemSelectHandle = NULL;
-XnCallbackHandle g_nValueChangeHandle = NULL;
-
-XnCallbackHandle g_nPrimaryCreateHandle = NULL;
-XnCallbackHandle g_nPrimaryDestroyHandle = NULL;
-
-XnUInt32 g_TrackPadHandle = 0;
-
-XnBool g_isPrintItemHover = TRUE;
-XnBool g_isPrintValueChange = FALSE;
-XnBool g_isInputStarted = FALSE;
-
-XnPoint3D CurrentItem;
-
-void XN_CALLBACK_TYPE TrackPad_ValueChange(XnFloat fXValue, XnFloat fYValue, void* cxt) {
-    if(TRUE == g_isPrintValueChange) printf("Value changed: %f, %f\n", fXValue, fYValue);
-
-    g_fXValue = fXValue;
-    g_fYValue = fYValue;
-}
-void XN_CALLBACK_TYPE TrackPad_ItemHover(XnInt32 nXItem, XnInt32 nYItem, void* cxt) {
-    if(TRUE == g_isPrintItemHover) printf("Hover: %d,%d\n", nXItem, nYItem);
-
-    if((TRUE == g_bIsPushed) && (CurrentItem.X != nXItem || CurrentItem.Y != nYItem)) {
-        g_bIsPushed = FALSE;
-        g_nCurrentFrame = 0;
-    }
-
-    CurrentItem.X = nXItem;
-    CurrentItem.Y = nYItem;
-}
-
-void XN_CALLBACK_TYPE TrackPad_ItemSelect(XnInt32 nXItem, XnInt32 nYItem, XnVDirection eDir, void* cxt) {
-    printf("Select: %d,%d (%s)\n", nXItem, nYItem, XnVDirectionAsString(eDir));
-    g_bIsPushed = TRUE;
-}
-
-void XN_CALLBACK_TYPE TrackPad_PrimaryCreate(const XnVHandPointContext* cxt, const XnPoint3D& ptFocus, void* UserCxt) {
-    printf("TrackPad input has started!!!, point ID: [%d] ", cxt->nID);
-    printf("Starting point position: [%f],[%f],[%f]\n", cxt->ptPosition.X, cxt->ptPosition.Y, cxt->ptPosition.Z);
-    g_isInputStarted = TRUE;
-}
-
-void XN_CALLBACK_TYPE TrackPad_PrimaryDestroy(XnUInt32 nID, void* UserCxt) {
-    //printf("TrackPad input has stopped!!!\n");
-    g_isInputStarted = FALSE;
-}
-
-void InitiateTrackPad() {
-    printf("TrackPad initiated.\n");
-    if(NULL != g_pTrackPad) {
-      g_pTrackPad->SetItemCount(g_TP_XDim, g_TP_YDim);
-    }
-}
-
-void XN_CALLBACK_TYPE SessionStart(const XnPoint3D& ptFocus, void* UserCxt) {
-    printf("TrackPad startsession.\n");
-    g_bInSession = true;
-}
-void XN_CALLBACK_TYPE SessionEnd(void* UserCxt) {
-    printf("TrackPad endsession.\n");
-    g_bInSession = false;
-}
-
-//---------------------------------------------------------------------------
 // Globals
 //---------------------------------------------------------------------------
+xn::Context g_Context;
+xn::ScriptNode g_ScriptNode;
 xn::DepthGenerator g_DepthGenerator;
 xn::UserGenerator g_UserGenerator;
 xn::Player g_Player;
@@ -117,12 +22,13 @@ xn::Player g_Player;
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
 
-XnBool drawSkeleton = TRUE;
-XnBool quitRequested = FALSE;
-XnBool headView = TRUE;
-XnBool doClear = FALSE;
-XnBool isMouseDown = FALSE;
-XnBool isUsingMouse = TRUE;
+bool drawSkeleton = TRUE;
+bool drawSquare = TRUE;
+bool quitRequested = FALSE;
+bool headView = TRUE;
+bool doClear = FALSE;
+bool isMouseDown = FALSE;
+bool isUsingMouse = TRUE;
 int g_TestVar = -2;
 int currentBrush = 0;
 XnUInt32 currentUser = -1;
@@ -132,33 +38,11 @@ XnUInt32 currentUser = -1;
 // Code
 //---------------------------------------------------------------------------
 void CleanupExit() {
-    //trackpad
-    if(NULL != g_pTrackPad) {
-        if(NULL != g_nItemHoverHandle) g_pTrackPad->UnregisterItemHover(g_nItemHoverHandle);
-        if(NULL != g_nValueChangeHandle) g_pTrackPad->UnregisterValueChange(g_nValueChangeHandle);
-        if(NULL != g_nItemSelectHandle) g_pTrackPad->UnregisterItemSelect(g_nItemSelectHandle);
-        if(NULL != g_nPrimaryDestroyHandle) g_pTrackPad->UnregisterPrimaryPointDestroy(g_nPrimaryDestroyHandle);
-        if(NULL != g_nPrimaryCreateHandle) g_pTrackPad->UnregisterPrimaryPointCreate(g_nPrimaryCreateHandle);
-    }
-
-    if(NULL != g_pSessionManager) {
-        if(0 != g_TrackPadHandle) g_pSessionManager->RemoveListener(g_TrackPadHandle);
-        delete g_pSessionManager;
-        g_pSessionManager = NULL;
-    }
-
-    if(NULL != g_pTrackPad) {
-        delete g_pTrackPad;
-        g_pTrackPad = NULL;
-    }
-
-    //skeleton
     g_ScriptNode.Release();
+    g_Context.Release();
     g_DepthGenerator.Release();
-    /////g_ImageGenerator.Release();
     g_UserGenerator.Release();
     g_Player.Release();
-    g_Context.Release();
 
     exit(1);
 }
@@ -268,7 +152,6 @@ void LoadCalibration() {
 void glutDisplay(void) {
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     g_Context.WaitAnyUpdateAll();
-    g_pSessionManager->Update(&g_Context);
     
     renderLumen();
     
@@ -286,6 +169,7 @@ void glutKeyboard(unsigned char key, int x, int y) {
     switch (key) {
         case  27: quitRequested = true; break;
         case 's': drawSkeleton= !drawSkeleton; break;
+        case 'y': drawSquare = !drawSquare; break;
         case 'S': SaveCalibration(); break;
         case 'L': LoadCalibration(); break;
         case 'h': headView = !headView; break;
@@ -406,23 +290,6 @@ int main(int argc, char** argv) {
         }
     }
     
-    //trackpad
-    g_pSessionManager = new XnVSessionManager();
-
-    if(NULL == g_pSessionManager) {
-        printf("Couldn't create PointTracker!! (out of memory)\n");
-        CleanupExit();
-    }
-
-    if(NULL == g_pTrackPad) {
-        g_pTrackPad = new XnVSelectableSlider2D(g_TP_XDim, g_TP_YDim);
-    }
-    if(NULL == g_pTrackPad) {
-        printf("Couldn't create TrackPad!! (out of memory)\n");
-        CleanupExit();
-    }
-    
-    //skeleton    
     nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_DEPTH, g_DepthGenerator);
     CHECK_RC(nRetVal, "Find depth generator");
     /////nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_IMAGE, g_ImageGenerator);
@@ -467,30 +334,6 @@ int main(int argc, char** argv) {
 
     nRetVal = g_Context.StartGeneratingAll();
     CHECK_RC(nRetVal, "StartGenerating");
-    
-    //trackpad
-    // Initialize the point tracker
-    XnStatus rc = g_pSessionManager->Initialize(&g_Context, "Wave,RaiseHand,Click", "Wave,RaiseHand,Click");
-    if (rc != XN_STATUS_OK) {
-        printf("Couldn't initialize the Session Manager: %s\n", xnGetStatusString(rc));
-        CleanupExit();
-    }
-    g_pSessionManager->RegisterSession(NULL, &SessionStart, &SessionEnd, NULL);
-
-    // Add TrackPad to the point tracker
-    g_TrackPadHandle = g_pSessionManager->AddListener(g_pTrackPad);
-
-    // Register for the Hover event of the TrackPad
-    g_nItemHoverHandle = g_pTrackPad->RegisterItemHover(NULL, &TrackPad_ItemHover);
-    // Register for the Value Change event of the TrackPad
-    g_nValueChangeHandle = g_pTrackPad->RegisterValueChange(NULL, &TrackPad_ValueChange);
-    // Register for the Select event of the TrackPad
-    g_nItemSelectHandle = g_pTrackPad->RegisterItemSelect(NULL, &TrackPad_ItemSelect);
-
-    // Register for Input Start event of the TrackPad
-    g_nPrimaryCreateHandle = g_pTrackPad->RegisterPrimaryPointCreate(NULL, &TrackPad_PrimaryCreate);
-    // Register for Input Stop event of the TrackPad
-    g_nPrimaryDestroyHandle = g_pTrackPad->RegisterPrimaryPointDestroy(NULL, &TrackPad_PrimaryDestroy);
 
     glInit(&argc, argv);
     glutMainLoop();
