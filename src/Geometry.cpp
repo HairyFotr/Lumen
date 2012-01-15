@@ -1,3 +1,4 @@
+#include "Utils.h"
 #include <stdio.h>
 #include <string>
 #include <map>
@@ -48,6 +49,11 @@ class LinePoint {
         projpoint = pp;
         thickness = 1;
     }
+    LinePoint(Vec3 p, Vec3 pp, float thick) { 
+        point = p;
+        projpoint = pp;
+        thickness = thick;
+    }
     
     Vec3 point, projpoint;//originalpoint, projected point
     float thickness;
@@ -84,7 +90,9 @@ public:
         return (items.size()-1);
     }
     int Add(Vec3 p, Vec3 pp) { return Add(LinePoint(p, pp)); }
+    int Add(Vec3 p, Vec3 pp, float thick) { return Add(LinePoint(p, pp, thick)); }
     int Add(XnPoint3D p, XnPoint3D pp) { return Add(Vec3(p.X,p.Y,p.Z), Vec3(pp.X,pp.Y,pp.Z)); }    
+    int Add(XnPoint3D p, XnPoint3D pp, float thick) { return Add(Vec3(p.X,p.Y,p.Z), Vec3(pp.X,pp.Y,pp.Z), thick); }
     //LinePoint* GetLinePoint(int ItemKey) { return &(items[ItemKey]); }    
     //void Remove(int ItemKey) { items.erase(GetLinePoint(ItemKey)); }    
     void Clear(void) { items.clear(); }  
@@ -99,25 +107,34 @@ public:
         brush = 0; 
         displayList = -1;
     }
-    Line(float rr, float gg, float bb) {
+    Line(float rr, float gg, float bb, float aa) {
         brush = 0; 
         r=rr;
         g=gg;
         b=bb;
+        a=aa;
         displayList = -1;
     }    
-    Line(float rr, float gg, float bb, int br) {
+    Line(float rr, float gg, float bb, float aa, int br) {
         brush = br;
         r=rr;
         g=gg;
         b=bb;
+        a=aa;
         displayList = -1;
     }
     LinePoints linePoints;
-    int brush;//tube, rectangle, flat, ...
+    int brush;
     float r,g,b,a;
     Vec3 avgPoint;
     int displayList;
+    
+    void setColor(float rr, float gg, float bb, float aa) {
+        r=rr;
+        g=gg;
+        b=bb;
+        a=aa;
+    }
     
     Vec3 calculateAvgPoint() {
         //if Z of start > Z end, reverse
@@ -144,22 +161,33 @@ public:
     }
         
     void renderLine() {
-        if(displayList != -1 && glIsList(displayList)) {
+        renderLine(-1,-1);
+    }
+    void renderLine(int bbrush, float thickness) {
+        if(bbrush==-1 && displayList!=-1 && glIsList(displayList)) {
             glCallList(displayList);
         } else {
-            a=0.5;
+            //a=0.75;//0.5;
             glColor4f(r, g, b, a);
+
+            //brush override
+            if(bbrush==-2) brush = (int)(rand01()*3); 
+            else if(bbrush!=-1) brush = bbrush;
+
             // Two-pass rendering - front/back
             glEnable(GL_CULL_FACE);
             for(int pass=0; pass<=1; pass++) {
                 if(pass==0) glCullFace(GL_FRONT); else glCullFace(GL_BACK);
                 
                 bool start = true, end = false;
-                
                 for(int p = 0; p < linePoints.Count()-1; p++) {
                     if(p==linePoints.Count()-2) end = true;
                     
                     LinePoint lp1 = linePoints[p], lp2 = linePoints[p+1];
+                    if(thickness>0) {
+                        lp1.thickness = thickness;
+                        lp2.thickness = thickness;
+                    }
                     Vec3 vecA = lp1.projpoint;
                     Vec3 vecB = lp2.projpoint;
                     
@@ -237,7 +265,7 @@ public:
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 36;
+                            int polycount = 10;
                             
                             if(start == true) { // start cap
                                 start = false;

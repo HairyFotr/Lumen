@@ -27,6 +27,12 @@ bool drawSquare = TRUE;
 bool quitRequested = FALSE;
 bool headView = TRUE;
 bool doClear = FALSE;
+bool menuEnabled = FALSE;
+bool menuEnabledInit = FALSE;
+bool menuScrollUp = FALSE;
+bool menuScrollDown = FALSE;
+bool menuClick = FALSE;
+float menuFadeIn = 0.0;
 bool isMouseDown = FALSE;
 bool isUsingMouse = TRUE;
 int g_TestVar = -2;
@@ -179,22 +185,27 @@ void glutKeyboard(unsigned char key, int x, int y) {
     }
 }
 
-float rr=0,gg=0,bb=0;
+float rr=0,gg=0,bb=0,aa=0.75;
 void processMouse(int button, int state, int x, int y) {
     if(state == GLUT_DOWN) {
-        if (button == GLUT_LEFT_BUTTON) {
+        if(button == GLUT_LEFT_BUTTON) {
             isMouseDown = TRUE;
+            menuClick = TRUE;
             if(rr==0&&gg==0&&bb==0) randomColor(rr,gg,bb);
-        } else if (button == GLUT_RIGHT_BUTTON) {
-            currentBrush = (currentBrush+1)%3;
-        } else if (button == GLUT_MIDDLE_BUTTON) {
+        } else if(button == GLUT_RIGHT_BUTTON) {
+            menuEnabled = !menuEnabled;
+            if(menuEnabled) {
+                menuFadeIn = 0;
+                menuEnabledInit = true;
+            }            
+        } else if(button == GLUT_MIDDLE_BUTTON) {
             randomColor(rr,gg,bb);
         }
-        /*else if (button == 4) {//UP
-            colori += (colori+1)%colorCount
-        } else if if (button == 3) {//DOWN
-            colori += (colori+1)%colorCount
-        }*/
+        else if(button == 4) {//UP
+            menuScrollUp = TRUE;
+        } else if(button == 3) {//DOWN
+            menuScrollDown = TRUE;
+        }
     } else {
         isMouseDown = FALSE;
     }
