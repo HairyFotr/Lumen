@@ -9,6 +9,9 @@ clock_t getTimeSince(clock_t sincetime) { return getTime()-sincetime; }
 float rand01() {
     return (float)rand()/(float)RAND_MAX;
 }
+int randInt(int lim) {
+    return rand()%lim;
+}
 
 void randomColor(float& r, float& g, float& b) {
     r = rand01();

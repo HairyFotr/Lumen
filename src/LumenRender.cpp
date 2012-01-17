@@ -2,7 +2,7 @@
 // Includes
 //---------------------------------------------------------------------------
 #define LUMEN_CAMERA //use camera
-//#define LUMEN_BACKDROP //use backdrop.jpg file instead of camera
+//#define LUMEN_BACKDROP //use backdrop.jpg tracker instead of camera
 #define LUMEN_TRACKER //use the Wrap 920AR tracker 
 
 #include "LumenRender.h"
@@ -44,10 +44,11 @@ extern bool menuScrollUp;
 extern bool menuScrollDown;
 extern bool menuClick;
 extern float menuFadeIn;
-extern int currentBrush;
 extern XnUInt32 currentUser;
 extern bool isMouseDown;
 extern bool isUsingMouse;
+extern int currentBrush;
+extern int brushCount;
 extern float rr;
 extern float gg;
 extern float bb;
@@ -57,13 +58,13 @@ GLUquadricObj* quadric;
 
 #ifdef LUMEN_TRACKER
 float initPitch, initYaw, initRoll;
-SmoothData *Pitch, *Yaw, *Roll;
+SmoothData *a, *b, *c;
 
 char* trackerData = new char[42];
 bool trackerInit = false;
 bool trackerLock = false;
 boost::thread trackerThread;
-ifstream file;
+ifstream tracker;
 
 union mix_t {
   int16_t i;
@@ -72,24 +73,74 @@ union mix_t {
     char b;
   } s;
 } uni;
-int getInt(char* pos) {
+int getInt16(char* pos) {
     uni.s.a = *(pos);
     uni.s.b = *(pos+1);
     int res = uni.i;
     return res;
 }
+union mix_t1 {
+  int i;
+  struct {
+    char a;
+    char b;
+    char c;
+    char d;
+  } s;
+} aaa;
+
+int getInt(char* pos) {
+    aaa.s.c = *(pos);
+    aaa.s.d = *(pos+1);
+    aaa.s.a = *(pos+2);
+    aaa.s.b = *(pos+3);
+    int res = aaa.i;
+    return res;
+}
+
+float notnormal(int a, int min, int max) {
+    return (((a-min)/1000.0)*360.0)/((max-min)/1000.0)-180.0;
+}
+
+float getVal(char* pos, int min, int max) {
+    return notnormal(getInt(pos), min, max);
+}
+
+float lastok=0;
+float straightYaw() { //looks ok if head isn't tilted by pitch/roll
+    if(a->get()>0) {
+        return (1.0*a->get()+1.5*(b->get()-150)+0.05*c->get());                    
+    } else {
+        return (1.0*a->get()+1.5*(b->get()-150)+0.05*c->get());                    
+    }
+}
+float getYaw() {
+    if(fabs(b->get()-150) < 5) {
+        fprintf(stderr, "%2.2f", b->get()-150);
+        lastok = straightYaw();
+        return lastok;
+    } else {
+        int weight = 20;
+        return (lastok*weight+straightYaw())/(weight+1.0);
+    }
+}
+
+float getYawVal(char* pos)   { return getVal(pos, -28966489, 10944869); }
+float getPitchVal(char* pos) { return getVal(pos, -24903612, 19529627); }
+float getRollVal(char* pos)  { return getVal(pos, -98828161, 79757133); }
+
 void updateTracker() {
     if(trackerInit) {
-        Pitch->insert((float)getInt(trackerData+2));
-        Yaw->insert((float)getInt(trackerData+4));
-        Roll->insert((float)getInt(trackerData+6));
+        a->insert(getYawVal(trackerData+2+0));
+        b->insert(getPitchVal(trackerData+2+4));
+        c->insert(getRollVal(trackerData+2+8));
     }
 }
 void readTracker() {
     if(trackerInit) {
         while(true) {
             trackerLock=true;
-            file.read(trackerData, 42);
+            tracker.read(trackerData, 42);
             updateTracker();
             trackerLock=false;
             //usleep(10*1000);
@@ -100,28 +151,28 @@ void readTracker() {
 // yes I know this is horrible - fileRead blocks if no data.
 boost::thread firstReadThread;
 void firstRead() {
-    file.read(trackerData, 42);
-    if(getInt(trackerData)==-32767) {  
-        int smoothlen=27;
-        Pitch = new SmoothData((float)getInt(trackerData+2),smoothlen,0);
-        Yaw = new SmoothData((float)getInt(trackerData+4),smoothlen,0);
-        Roll = new SmoothData((float)getInt(trackerData+6),smoothlen,0);
+    tracker.read(trackerData, 42);
+    if(getInt16(trackerData)==-32767) {
+        int smoothlen=50;
+        a = new SmoothData(getYawVal(trackerData+2+0),smoothlen,0);
+        b = new SmoothData(getPitchVal(trackerData+2+4),smoothlen,0);
+        c = new SmoothData(getRollVal(trackerData+2+8),smoothlen,0);
         trackerInit = true;
         for(int i=0; i<smoothlen; i++) {
-            file.read(trackerData, 42);
+            tracker.read(trackerData, 42);
             updateTracker();
         }
-        initPitch = Pitch->get();
-        initYaw = Yaw->get();
-        initRoll = Roll->get();
+        //initPitch = Pitch->get();
+        initYaw = getYaw();//Yaw->get();
+        //initRoll = Roll->get();
         trackerThread = boost::thread(readTracker);
     }
 }
 void initTracker() {
-    file.open("/dev/hidraw5", ios::in|ios::binary);
+    tracker.open("/dev/hidraw0", ios::in|ios::binary);
     usleep(1000*1000);
-    if(file.is_open()) {
-        file.rdbuf()->pubsetbuf(0, 0);
+    if(tracker.is_open()) {
+        tracker.rdbuf()->pubsetbuf(0, 0);
         firstReadThread = boost::thread(firstRead);
     }
 }
@@ -155,7 +206,7 @@ cv::Mat makeTexture(string fileName, GLuint &texID) {
     return mat;
 }
 
-cv::VideoCapture cap;
+cv::VideoCapture capture;
 cv::Mat frame;
 cv::Size size;
 GLuint cameraTextureID;
@@ -166,8 +217,8 @@ void initCamera() {
     #ifdef LUMEN_BACKDROP
     frame = cv::imread("backdrop.jpg");
     #else
-    cap.open(-1);
-    cap >> frame;
+    capture.open(-1);
+    capture >> frame;
     #endif
     if(frame.data) {
         size = frame.size();        
@@ -179,7 +230,7 @@ void readCamera() {
     if(cameraInit==true) {
         #ifdef LUMEN_BACKDROP
         #else
-        cap >> frame;
+        capture >> frame;
         #endif
     }
     cameraLock = false;
@@ -215,12 +266,15 @@ void renderCamera() {
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
     
+    glScalef(1.4,1.4,1.4);
+    glTranslatef(-60,-105,0);
+    
     glColor4f(1,1,1,1);
     glBegin(GL_QUADS);
-    glTexCoord2i(0,size.height);            glVertex3f(0,size.height, 0);
-    glTexCoord2i(size.width,size.height);   glVertex3f(size.width,size.height, 0);
-    glTexCoord2i(size.width,0);             glVertex3f(size.width,0, 0);
-    glTexCoord2i(0,0);                      glVertex3f(0,0, 0);
+        glTexCoord2i(0,size.height);            glVertex3f(0,size.height, 0);
+        glTexCoord2i(size.width,size.height);   glVertex3f(size.width,size.height, 0);
+        glTexCoord2i(size.width,0);             glVertex3f(size.width,0, 0);
+        glTexCoord2i(0,0);                      glVertex3f(0,0, 0);
     glEnd();
     glDisable(GL_TEXTURE_RECTANGLE_ARB);
     glDisable(GL_TEXTURE_2D);
@@ -230,11 +284,11 @@ void renderCamera() {
 #endif
 
 SmoothPoint *headpos;
-SmoothPoint *lastPosition;
-SmoothPoint *lastPositionProj;
-bool drawingLine = false;
-int brushCount = 3;
-float currentThickness=1;
+SmoothPoint *shoulderLeft, *shoulderRight;
+SmoothPoint *lastPosition, *lastPositionProj;
+extern bool drawingLine;
+extern bool cancelLine;
+float currentThickness=0.75;
 
 Line currentLine;
 Lines lines;
@@ -242,10 +296,6 @@ Lines lines;
 Line *menuSquiggle;
 XnPoint3D menuHandInit;
 int menuSelected = -1;
-#define DIR_HORI 1
-#define DIR_VERT 2
-#define DIR_BOTH 3
-int menuDirection = DIR_HORI;
 GLuint menuColorPic;
 cv::Mat menuColorPicData;
 XnPoint3D menuInitColorPoint;
@@ -284,6 +334,8 @@ XnPoint3D getProj(XnPoint3D current) {
     g_DepthGenerator.ConvertRealWorldToProjective(1, &current, &proj);
     return proj;
 }
+
+/*SmoothPoint *hand1=NULL, *hand2=NULL;
 void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
     if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
     
@@ -294,10 +346,43 @@ void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2)
     if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
     
     XnPoint3D pt[2] = {joint1.position, joint2.position};
-        
+    
     g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
+    
+    Vec3::makeLonger(pt[0], pt[1], 20);
+    if(hand1==NULL) {
+        hand1 = new SmoothPoint(pt[0], 12,1);
+        hand2 = new SmoothPoint(pt[1], 12,1);
+    } else {
+        hand1->insert(pt[0]);
+        lastPositionProj->insert(pt[1]);
+    }
+    
+    glVertex3f(hand1->X(), hand1->Y(), hand1->Z());
+    glVertex3f(lastPositionProj->X(), lastPositionProj->Y(), lastPositionProj->Z());
+    
+    /*glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
+    glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);*/
+//}
+void DrawLimb2(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
+    if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
+    
+    XnSkeletonJointPosition joint1, joint2;
+    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint1, joint1);
+    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint2, joint2);
+    
+    if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
+    
+    XnPoint3D pt[2] = {joint1.position, joint2.position};
+    
+    g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
+
     glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
     glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);
+}
+void DrawLine(XnPoint3D p1, XnPoint3D p2) {
+    glVertex3f(p1.X, p1.Y, p1.Z);
+    glVertex3f(p2.X, p2.Y, p2.Z);
 }
 
 void drawQuad(float x, float y) {
@@ -351,6 +436,17 @@ void drawArrow() {
     drawArrow(1);
 }
 
+void cleanupLumen() {
+    #ifdef LUMEN_CAMERA
+    capture.release();
+    #endif
+    #ifdef LUMEN_TRACKER
+    tracker.close();
+    #endif
+}
+
+float maxX=-10000, minX=+10000;
+
 void renderLumen() {
     if(firstRender) {
         // init quadric object
@@ -394,23 +490,131 @@ void renderLumen() {
     // lines and body
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(25, (640/480+0.0), 1.0, 5000.0);
+    gluPerspective(10, (640/480+0.0), 1.0, 5000.0);
     glScalef(-1,1,1);
     
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    #ifdef LUMEN_TRACKER
-    if(trackerInit) {
-        glRotatef((Yaw->get()-initYaw)/7.5,0,1,0);
-        glRotatef((Roll->get()-initRoll)/7.5,0,0,1);
-        glRotatef((Pitch->get()-initPitch)/7.5,1,0,0);
-    }
-    #endif
     if(headpos != NULL) {
-    gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
-              headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
-              0.0,-1.0,0.0);// up vector 
+        #define LUMEN_NORMALHEAD
+        #ifdef LUMEN_NORMALHEAD
+        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
+                  headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
+                  0.0,-1.0,0.0);// up vector 
+        #else
+        Vec3 shVec = (shoulderLeft->getVec3() - shoulderRight->getVec3());
+        shVec = shVec.rotate90();
+        shVec.normalize();
+        //shVec *= 1;
+
+        Vec3 headvec = headpos->getVec3()+shVec;
+
+        if(rand01()>0.9) printf("[%1.2f, %1.2f]\n", shVec.x, shVec.z);
+
+        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
+                  headpos->X(),headpos->Y(),headpos->Z()+shVec.z, // look-at vector
+                  0.0,-1.0,0.0);// up vector 
+        #endif
+        #ifdef LUMEN_TRACKER
+        //glRotatef((getYaw()-initYaw)/10,0,1,0);
+        #endif
+
+
+    //if(headpos != NULL) {
+        /*glTranslatef(headpos->X(),headpos->Y(),headpos->Z());
+
+        if(trackerInit) {
+            //fprintf(stderr, "%f\t%f\t%f", (Yaw->get()-initYaw), (Roll->get()-initRoll), (Pitch->get()-initPitch));
+
+
+            glRotatef((Yaw->get()-initYaw)/2250000.0,1,0,0);
+            glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
+            glRotatef((Roll->get()-initRoll)/2250000.0,0,0,1);
+        }
+
+        glTranslatef(-headpos->X(),-headpos->Y(),-headpos->Z());
+        /*#ifdef LUMEN_TRACKER
+        if(trackerInit) {
+            //fprintf(stderr, "%f\t%f\t%f", (Yaw->get()-initYaw), (Roll->get()-initRoll), (Pitch->get()-initPitch));
+
+
+            glRotatef((Yaw->get()-initYaw)/2250000.0,1,0,0);
+            glRotatef(-(Roll->get()-initRoll)/2250000.0,0,0,1);
+
+            glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
+        }
+        #endif*/
+        /*gluLookAt(0,0,0,    // camera position
+
+                headpos->X(),headpos->Y(),headpos->Z(),
+                  //261.32,256.29,3314.46,
+                  //headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
+                  0.0,-1.0,0.0);// up vector */
+        //glRotatef((Roll->get()-initRoll)/2250000.0,0,0,1);
+        /*XnPoint3D shL = shoulderLeft->get();
+        XnPoint3D shR = shoulderRight->get();
+        Vec3 turn = Vec3( //shoulder vector
+
+            shL.X-shR.X,
+            shL.Y-shR.Y,
+            shL.Z-shR.Z
+        );
+
+        turn = Vec3( //forward vector
+            -turn.z,
+            0,
+            turn.x
+
+        );
+        turn.normalize();
+        turn*=10;
+        
+
+        if(menuClick) fprintf(stderr, "[%f,%f]", turn.x, turn.z);
+        */
+        
+        //fprintf(stderr, "[%f]\n", getYaw());
+        //glRotatef((getYaw())/3,0,1,0);
+            //}        
+            /*gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),
+                  0,200,0,
+                  //headpos->X()+getYaw(),headpos->Y(),headpos->Z(),
+                  //headpos->X()+sin(getYaw()*3*M_PI/180.0),200,headpos->Z()+cos(getYaw()*3*M_PI/180.0),
+                  0.0,-1.0,0.0);
+        
+/*        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),
+                  0,200,0,
+                  //headpos->X()+getYaw(),headpos->Y(),headpos->Z(),
+                  //headpos->X()+sin(getYaw()*3*M_PI/180.0),200,headpos->Z()+cos(getYaw()*3*M_PI/180.0),
+                  0.0,-1.0,0.0);
+//        glRotatef(getYaw()/5,0,1,0);
+        
+        
+//        fprintf(stderr, "[%f]\n", getYaw());
+        /*fprintf(stderr, "[%3.2f  %3.2f  %3.2f  |  %f  %f  %f]\n", 
+            headpos->X(),headpos->Y(),headpos->Z(),
+            (headpos->X()+sin(getYaw()*3*M_PI/180.0)),200,(headpos->Z()+cos(getYaw()*3*M_PI/180.0)));*/
+        //if(isMouseDown) glRotatef(getYaw(),1,0,0);
+        
+        //glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
+        //glRotatef((Roll->get()-initRoll)/22500000.0,0,0,1);
+        /*
+        Line *l = new Line(rr,gg,bb,aa, currentBrush);        
+        Vec3 dummy = Vec3(0,0,0);
+        l->linePoints.Add(dummy,{100.52,-256.42,1765.34});
+        l->linePoints.Add(dummy,{-153.22,-283.74,1852.76});
+        l->renderLine();
+
+        Line *l2 = new Line(rr,gg,bb,aa, currentBrush);        
+        l2->linePoints.Add(dummy,{-163.88,-52.57,2291.42});
+        l2->linePoints.Add(dummy,{-237.98,-406.69,2358.03});
+        l2->renderLine();
+
+        Line *l3 = new Line(rr,gg,bb,aa, currentBrush);        
+        l3->linePoints.Add(dummy,{-250.17,-494.26,2449.86});
+        l3->linePoints.Add(dummy,{-333.52,-245.33,2227.22});
+        l3->renderLine();*/
     }
 
     if(doClear) {
@@ -422,20 +626,28 @@ void renderLumen() {
     XnUserID aUsers[15];
     XnUInt16 nUsers = 15;
     g_UserGenerator.GetUsers(aUsers, nUsers);
-
+    
     //for(int i = 0; i < nUsers; i++) {
     if(nUsers>0 && currentUser>=0 && currentUser<=nUsers) {
         int i = currentUser-1;
         XnPoint3D hand = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_HAND);
+        XnPoint3D elbow = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_ELBOW);
+        hand = Vec3::makeLonger(elbow, hand, -100);
         if(firstUser) {
-            lastPosition = new SmoothPoint(hand, 15, 2);
-            lastPositionProj = new SmoothPoint(getProj(hand), 15, 2);
+            lastPosition = new SmoothPoint(hand, 15, 1);
+            lastPositionProj = new SmoothPoint(getProj(hand), 15, 1);
         } else {
             lastPosition->insert(hand);
             lastPositionProj->insert(getProj(hand));
         }
-        
-        if(!menuEnabled) { 
+
+        /*if(headpos != NULL) {
+            if(headpos->X()>maxX) maxX = headpos->X();
+            if(headpos->X()<minX) minX = headpos->X();
+            printf("(%1.2f,%1.2f,%1.2f)(%1.2f,%1.2f)\n", headpos->X(),headpos->Y(),headpos->Z(), minX, maxX);
+        }*/
+
+        if(!menuEnabled) {
             if(drawingLine==false && isUsingMouse==true && isMouseDown==true) { // line start
                 //start new line
                 drawingLine = true;
@@ -452,29 +664,115 @@ void renderLumen() {
                 printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition->X(),lastPosition->Y(),lastPosition->Z());
                 currentLine.compileLine();
                 lines.Add(currentLine);
+            } else if(drawingLine && cancelLine) { // cancel line
+                isMouseDown = false;
+                drawingLine = false;
             } else if(drawingLine) { // line mid
                 currentLine.linePoints.Add(lastPosition->get(), lastPositionProj->get(), currentThickness);
             }
         }
+        if(cancelLine) cancelLine = false;
         
         // render lines
         for(int l = 0; l < lines.Count(); l++) lines[l].renderLine();
         if(drawingLine) currentLine.renderLine();
         
         if(drawSkeleton) {
-            glBegin(GL_LINES);
             glColor4f(1,1,1,1);
+            glBegin(GL_LINES);
+                DrawLine(lastPositionProj->get(), getProj(elbow));
+                //DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
+            glEnd();
+            
+            glColor4f(rr,gg,bb,aa);
+            glTranslatef(lastPositionProj->X(), lastPositionProj->Y(), lastPositionProj->Z());
+            switch(currentBrush) {
+                case 0: {
+                    float size = 3.5;
+                    gluSphere(quadric, size*currentThickness, 15, 15); break;
+                } case 1: {
+                    glBegin(GL_QUADS);
+                    //Vec3 n = cross(vecB); n.normalize();
+                    //glNormal3f(n.x, n.y, n.z);
+                    float size = 4;
+                    glVertex3f(+size*currentThickness, 0, 0);
+                    glVertex3f(-size*currentThickness, 0, 0);
+                    glVertex3f(-size*currentThickness, 0, 0);
+                    glVertex3f(+size*currentThickness, 0, 0);
+                    glEnd();
+                    break;
+               } case 2: {
+                    float size = 3;
+                    glScalef(size*currentThickness, size*currentThickness, size*currentThickness);
+                    glBegin(GL_QUADS);            
+                         // top
+                        glNormal3f( 0, 1, 0);
+                        glVertex3f( 1, 1,-1);
+                        glVertex3f(-1, 1,-1);
+                        glVertex3f(-1, 1, 1);
+                        glVertex3f( 1, 1, 1);
+                        // bottom 
+                        glNormal3f( 0,-1, 1);
+                        glVertex3f( 1,-1, 1);
+                        glVertex3f(-1,-1, 1);
+                        glVertex3f(-1,-1,-1);
+                        glVertex3f( 1,-1,-1);
+                        // front
+                        glNormal3f( 0, 0, 1);
+                        glVertex3f( 1, 1, 1);
+                        glVertex3f(-1, 1, 1); 
+                        glVertex3f(-1,-1, 1);
+                        glVertex3f( 1,-1, 1);
+                        // back
+                        glNormal3f( 0, 0,-1);
+                        glVertex3f( 1,-1,-1);
+                        glVertex3f(-1,-1,-1);
+                        glVertex3f(-1, 1,-1);
+                        glVertex3f( 1, 1,-1);
+                        // left
+                        glNormal3f(-1, 0, 0);
+                        glVertex3f(-1, 1, 1);
+                        glVertex3f(-1, 1,-1);
+                        glVertex3f(-1,-1,-1);
+                        glVertex3f(-1,-1, 1);
+                        // right
+                        glNormal3f( 1, 0, 0);
+                        glVertex3f( 1, 1,-1);
+                        glVertex3f( 1, 1, 1);
+                        glVertex3f( 1,-1, 1);
+                        glVertex3f( 1,-1,-1);
+                    glEnd();
+                    break; 
+                }
+            }
+            glTranslatef(-lastPositionProj->X(), -lastPositionProj->Y(), -lastPositionProj->Z());
+            //put this inside a method, you silly person
+/*            XnSkeletonJointPosition joint;
+            g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(aUsers[i], XN_SKEL_RIGHT_HAND, joint);
+            if(joint.fConfidence > 0) {
+                XnPoint3D pt = joint.position;
+                
+                g_DepthGenerator.ConvertRealWorldToProjective(1, &pt, &pt);
 
-            DrawLimb(aUsers[i], XN_SKEL_LEFT_ELBOW, XN_SKEL_LEFT_HAND);
-            DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
+            }*/
+            glColor4f(1,1,1,1);
+            glBegin(GL_LINES);
+            DrawLimb2(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_SHOULDER);
             glEnd();
         }
 
         XnPoint3D head = getProj(GetLimbPosition(aUsers[i], XN_SKEL_HEAD));
+        XnPoint3D sh1 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_LEFT_SHOULDER));
+        XnPoint3D sh2 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_SHOULDER));
         if(firstUser) {
             headpos = new SmoothPoint(head, 18, 1);
+            printf("headpos (%1.2f,%1.2f,%1.2f)\n",  headpos->X(),headpos->Y(),headpos->Z());
+            shoulderLeft = new SmoothPoint(sh1, 20, 1);
+            shoulderRight = new SmoothPoint(sh2, 20, 1);
         } else {
             headpos->insert(head);
+            shoulderLeft->insert(sh1);
+            shoulderRight->insert(sh2);
         }
         firstUser = false;
     
@@ -489,6 +787,12 @@ void renderLumen() {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         
+        // menu
+        //
+        //
+        //
+        //
+        //
         // yes yes... horrible and handcoded :)
         if(menuEnabled) {
             if(menuEnabledInit) {
@@ -651,7 +955,7 @@ void renderLumen() {
                     glDisable(GL_LIGHTING);
                     glDisable(GL_BLEND);
                 glPopMatrix();
-                   
+                
                 // color select
                 if(menuIsSelected && menuSelected==1) {
                     if(menuClick) {                        
@@ -755,14 +1059,15 @@ void renderLumen() {
                         glColor4f(1,1,1,1);
                         drawQuad(4,4);
                         aa=(mov.X+78)/(78*2.0);
-                        currentThickness=0.2+((mov.Y+78)/(78*2.0))*2;
+                        if(aa < 0.15) aa=0.1;
+                        currentThickness=0.2+((mov.Y+78)/(78*2.0))*1.75;
                     }
                     
                 glPopMatrix();   
             glPopMatrix();
-            if(menuFadeIn<0.9) menuFadeIn += 0.05; else menuFadeIn = 1;
+            if(menuFadeIn<0.9) menuFadeIn += 0.04; else menuFadeIn = 1;
         } else if(menuFadeIn > 0) {
-            menuFadeIn -= 0.05;
+            menuFadeIn -= 0.04;
             glColor4f(0,0,0,0.75*menuFadeIn);
             drawQuad(0,0,640,480);
         }

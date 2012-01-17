@@ -18,9 +18,9 @@ extern GLUquadricObj* quadric;
 
 class Vec3 {
 public:
+    float x,y,z;
     Vec3(float X, float Y, float Z) { x = X; y = Y; z = Z; }
     Vec3() { x = 0; y = 0; z = 0; }
-    float x,y,z;
     
     Vec3 operator+(Vec3 v) { return Vec3(x+v.x, y+v.y, z+v.z); }
     Vec3 operator-(Vec3 v) { return Vec3(x-v.x, y-v.y, z-v.z); }
@@ -39,6 +39,28 @@ public:
     void normalize() { 
         float len = length();
         x/=len; y/=len; z/=len;
+    }
+    Vec3 rotate90() { return Vec3(z,y,x); }
+    /*static Vec3 makeLonger(Vec3 v1, Vec3 v2, float addLen) {
+        Vec3 orig = (v1-v2).normalize();
+        Vec3 res = Vec3(
+            v2.x+len*orig.x,
+            v2.y+len*orig.y,
+            v2.z+len*orig.z
+        );
+        return res;
+    }*/
+    static XnPoint3D makeLonger(XnPoint3D vv1, XnPoint3D vv2, float addLen) {
+        Vec3 v1 = Vec3(vv1.X, vv1.Y, vv1.Z);
+        Vec3 v2 = Vec3(vv2.X, vv2.Y, vv2.Z);
+        Vec3 orig = (v1-v2);
+        orig.normalize();
+        XnPoint3D res = {
+            v2.x+addLen*orig.x,
+            v2.y+addLen*orig.y,
+            v2.z+addLen*orig.z
+        };
+        return res;
     }
 };
 
@@ -265,7 +287,7 @@ public:
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 10;
+                            int polycount = 30;
                             
                             if(start == true) { // start cap
                                 start = false;

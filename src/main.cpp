@@ -4,6 +4,9 @@
 #include <ni/XnOpenNI.h>
 #include <ni/XnCodecIDs.h>
 #include <ni/XnCppWrapper.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "LumenRender.h"
 #include "Utils.h"
 #include <GL/glut.h>
@@ -22,6 +25,9 @@ xn::Player g_Player;
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
 
+bool cancelLine = FALSE;
+bool drawingLine = FALSE;
+bool userIsLost = FALSE;
 bool drawSkeleton = TRUE;
 bool drawSquare = TRUE;
 bool quitRequested = FALSE;
@@ -36,22 +42,15 @@ float menuFadeIn = 0.0;
 bool isMouseDown = FALSE;
 bool isUsingMouse = TRUE;
 int g_TestVar = -2;
+int brushCount = 3;
 int currentBrush = 0;
+
 XnUInt32 currentUser = -1;
 
 
 //---------------------------------------------------------------------------
 // Code
 //---------------------------------------------------------------------------
-void CleanupExit() {
-    g_ScriptNode.Release();
-    g_Context.Release();
-    g_DepthGenerator.Release();
-    g_UserGenerator.Release();
-    g_Player.Release();
-
-    exit(1);
-}
 
 // Callback: New user was detected
 void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
@@ -65,7 +64,15 @@ void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, v
 // Callback: An existing user was lost
 void XN_CALLBACK_TYPE User_LostUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
     printf("Lost user %d\n", nId);
-    if(nId == currentUser) currentUser = -1;
+    if(nId == currentUser) {
+        currentUser = -1;
+        userIsLost = true;
+        
+        /*XnUserID aUsers[15];
+        XnUInt16 nUsers = 15;
+        g_UserGenerator.GetUsers(aUsers, nUsers);
+        printf("Lost... There are now %d\n", nUsers);*/
+    }
 }
 // Callback: Detected a pose
 void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& capability, const XnChar* strPose, XnUserID nId, void* pCookie) {
@@ -76,6 +83,10 @@ void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& capabil
 // Callback: Started calibration
 void XN_CALLBACK_TYPE UserCalibration_CalibrationStart(xn::SkeletonCapability& capability, XnUserID nId, void* pCookie) {
     printf("Calibration started for user %d\n", nId);
+    /*XnUserID aUsers[15];
+    XnUInt16 nUsers = 15;
+    g_UserGenerator.GetUsers(aUsers, nUsers);
+    printf("Started... There are now %d\n", nUsers);*/
 }
 // Callback: Finished calibration
 void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& capability, XnUserID nId, XnBool bSuccess, void* pCookie) {
@@ -83,6 +94,11 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& cap
         // Calibration succeeded
         printf("Calibration complete, start tracking user %d\n", nId);
         g_UserGenerator.GetSkeletonCap().StartTracking(nId);
+
+        /*XnUserID aUsers[15];
+        XnUInt16 nUsers = 15;
+        g_UserGenerator.GetUsers(aUsers, nUsers);
+        printf("Added... There are now %d\n", nUsers);*/
     } else {
         // Calibration failed
         printf("Calibration failed for user %d\n", nId);
@@ -98,7 +114,7 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationComplete(xn::SkeletonCapability
         // Calibration succeeded
         printf("Calibration complete, start tracking user %d\n", nId);
         g_UserGenerator.GetSkeletonCap().StartTracking(nId);
-        currentUser = nId;
+        if(currentUser==-1) currentUser = nId;
     } else {
         // Calibration failed
         printf("Calibration failed for user %d\n", nId);
@@ -154,11 +170,22 @@ void LoadCalibration() {
     }
 }
 
+void CleanupExit() {
+    g_ScriptNode.Release();
+    g_Context.Release();
+    g_DepthGenerator.Release();
+    g_UserGenerator.Release();
+    g_Player.Release();
+    cleanupLumen();
+
+    exit(EXIT_SUCCESS);
+}
+
 // this function is called each frame
 void glutDisplay(void) {
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    g_Context.WaitAnyUpdateAll();
     
+    g_Context.WaitAnyUpdateAll();
     renderLumen();
     
     glutSwapBuffers();
@@ -193,10 +220,14 @@ void processMouse(int button, int state, int x, int y) {
             menuClick = TRUE;
             if(rr==0&&gg==0&&bb==0) randomColor(rr,gg,bb);
         } else if(button == GLUT_RIGHT_BUTTON) {
-            menuEnabled = !menuEnabled;
-            if(menuEnabled) {
-                menuFadeIn = 0;
-                menuEnabledInit = true;
+            if(drawingLine) {
+                cancelLine = true;
+            } else {
+                menuEnabled = !menuEnabled;
+                if(menuEnabled) {
+                    menuFadeIn = 0;
+                    menuEnabledInit = true;
+                }
             }            
         } else if(button == GLUT_MIDDLE_BUTTON) {
             randomColor(rr,gg,bb);
@@ -218,7 +249,10 @@ void glInit(int* pargc, char** argv) {
     glutCreateWindow ("Lumen");
     glutFullScreen();
     glutSetCursor(GLUT_CURSOR_NONE);
+    //lumen init
     randomColor(rr,gg,bb);
+    currentBrush = randInt(brushCount);    
+
     
     glutDisplayFunc(glutDisplay);
     glutIdleFunc(glutIdle);
@@ -274,6 +308,12 @@ void glInit(int* pargc, char** argv) {
         printf("%s failed: %s\n", what, xnGetStatusString(nRetVal)); \
         return nRetVal;                                              \
     }
+
+   
+void ctrlChandler(int s){
+   printf("Caught signal %d\n",s);
+   quitRequested = true;
+}
 
 int main(int argc, char** argv) {
     srand(time(NULL));
@@ -346,6 +386,15 @@ int main(int argc, char** argv) {
     nRetVal = g_Context.StartGeneratingAll();
     CHECK_RC(nRetVal, "StartGenerating");
 
+    //catch ctrl c
+    struct sigaction sigIntHandler;
+    sigIntHandler.sa_handler = ctrlChandler;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+    sigaction(SIGINT, &sigIntHandler, NULL);
+
     glInit(&argc, argv);
     glutMainLoop();
 }
+
+

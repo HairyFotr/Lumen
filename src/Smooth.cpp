@@ -3,6 +3,8 @@ class SmoothData { //moving average
     float* log;
     int logCurr;
     int lastWeight;
+    bool update;
+    float precomp;
 public:
     SmoothData(float elt, int len, int last) { 
         logLen = len;
@@ -10,27 +12,60 @@ public:
         log = new float[logLen];
         for(int i=0; i<logLen; i++) log[i] = elt;
         logCurr=0;
+        precomp = elt;
+        update = true;
+        get();
     }
+    
     
     void insert(float elt) {
         if(logLen > 0) {
             logCurr++;
             logCurr %= logLen;
             log[logCurr] = elt;
+            update = true;
         }
     }
+    
     float get() {
-        float res=0;
-        if(logLen > 0) {
-            for(int i=0; i<logLen; i++) res += log[i];
-            res += log[logCurr]*lastWeight;
-            res /= logLen+lastWeight;
+        if(update) {
+            float res=0;
+            if(logLen > 0) {
+                for(int i=0; i<logLen; i++) res += log[i];
+                res += log[logCurr]*lastWeight;
+                res /= logLen+lastWeight;
+            } else {
+                res = 0;
+            }
+            precomp = res;
+            update = false;
+            return res;
         } else {
-            res = 0;
+            return precomp;
         }
-        return res;
+    }
+    ~SmoothData() {
+        delete [] log;
     }
 };
+/*class SmoothData { //lowpass
+    float val;
+    float alp;
+public:
+    SmoothData(float elt, int len, int last) {
+        alp = 0.05;
+        val = elt;
+    }
+    
+    void insert(float elt) {
+        val = val*(1-alp) + elt*alp;
+    }
+    
+    float get() {
+        return val;
+    }
+};*/
+
 class SmoothPoint {
     SmoothData *x,*y,*z;
 public:
@@ -48,4 +83,5 @@ public:
         z->insert(elt.Z);
     }
     XnPoint3D get() { return {x->get(), y->get(), z->get()}; }
+    Vec3 getVec3() { return Vec3(x->get(), y->get(), z->get()); }
 };

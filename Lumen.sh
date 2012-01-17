@@ -8,6 +8,10 @@ then
 	make clean
 	cd ..
 fi
+if [ "$1" == "notrack" ]
+then
+    echo "todo"
+fi
 
 out="0"
 if [ ! -f bin/x86-Release/Lumen ]
@@ -22,3 +26,9 @@ then
 	cd bin/x86-Release
 	sudo ./Lumen
 fi
+
+if [ "$1" == "notrack" ]
+then
+    echo "todo"    
+fi
+
