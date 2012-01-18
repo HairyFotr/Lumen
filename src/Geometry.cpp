@@ -125,6 +125,12 @@ public:
 
 class Line {
 public:
+    /*string toString() {
+        string res = "Line\n";
+        string res = "Line\n";
+        res += linePoints.toString;
+        return linePoints.toString;
+    }*/
     Line() {
         brush = 0; 
         displayList = -1;
@@ -319,6 +325,17 @@ protected:
     vector<Line> items;
     
 public:
+/*    string toString() {
+        string res = "";
+        if(items.size() > 0) {
+            int i = items.size()-1;
+            while(i >= 0) {
+                res += items[i].toString()+"\n";
+                i--;
+            }                
+        }
+        return res;
+    }*/
     int Add(Line item) {
 
         //insert line at the appropriate Z value

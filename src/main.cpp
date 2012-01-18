@@ -43,6 +43,7 @@ bool isMouseDown = FALSE;
 bool isUsingMouse = TRUE;
 int g_TestVar = -2;
 int brushCount = 3;
+float currentThickness=0.75;
 int currentBrush = 0;
 
 XnUInt32 currentUser = -1;
@@ -215,6 +216,7 @@ void glutKeyboard(unsigned char key, int x, int y) {
 float rr=0,gg=0,bb=0,aa=0.75;
 void processMouse(int button, int state, int x, int y) {
     if(state == GLUT_DOWN) {
+        printf("%d\n", button);
         if(button == GLUT_LEFT_BUTTON) {
             isMouseDown = TRUE;
             menuClick = TRUE;
@@ -234,8 +236,24 @@ void processMouse(int button, int state, int x, int y) {
         }
         else if(button == 4) {//UP
             menuScrollUp = TRUE;
+            /*if(!menuEnabled) {
+                currentThickness += 0.1;
+                if(currentThickness > 2) {
+                    currentThickness = 2;
+                }
+            }*/
         } else if(button == 3) {//DOWN
             menuScrollDown = TRUE;
+            
+           /*if(!menuEnabled) {
+                currentThickness -= 0.1;
+                if(currentThickness < 0.2) {
+                    currentThickness = 0.2;
+                }
+            }*/
+        }
+        if(button == 8 || button == 7) {
+            system("scrot");
         }
     } else {
         isMouseDown = FALSE;

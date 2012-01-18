@@ -3,7 +3,8 @@
 //---------------------------------------------------------------------------
 #define LUMEN_CAMERA //use camera
 //#define LUMEN_BACKDROP //use backdrop.jpg tracker instead of camera
-#define LUMEN_TRACKER //use the Wrap 920AR tracker 
+#define LUMEN_TRACKER //can has the Wrap 920AR tracker 
+#define LUMEN_TRACKER_USE //use the tracker
 
 #include "LumenRender.h"
 #include "Geometry.cpp"
@@ -172,8 +173,13 @@ void initTracker() {
     tracker.open("/dev/hidraw0", ios::in|ios::binary);
     usleep(1000*1000);
     if(tracker.is_open()) {
+        #ifdef LUMEN_TRACKER_USE 
         tracker.rdbuf()->pubsetbuf(0, 0);
         firstReadThread = boost::thread(firstRead);
+        #endif
+    } else {
+        fprintf(stderr, "Can't read from tracker");
+        exit(1);
     }
 }
 #endif
@@ -288,7 +294,7 @@ SmoothPoint *shoulderLeft, *shoulderRight;
 SmoothPoint *lastPosition, *lastPositionProj;
 extern bool drawingLine;
 extern bool cancelLine;
-float currentThickness=0.75;
+extern float currentThickness;
 
 Line currentLine;
 Lines lines;
@@ -435,6 +441,15 @@ void drawArrow(float size) {
 void drawArrow() {
     drawArrow(1);
 }
+
+bool fexists(const char *filename) {
+    ifstream ifile(filename);
+    return ifile;
+}
+
+/*void saveData() {
+    lines
+}*/
 
 void cleanupLumen() {
     #ifdef LUMEN_CAMERA
