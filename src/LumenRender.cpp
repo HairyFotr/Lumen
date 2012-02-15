@@ -4,7 +4,7 @@
 #define LUMEN_CAMERA //use camera
 //#define LUMEN_BACKDROP //use backdrop.jpg tracker instead of camera
 #define LUMEN_TRACKER //can has the Wrap 920AR tracker 
-#define LUMEN_TRACKER_USE //use the tracker
+//#define LUMEN_TRACKER_USE //use the tracker
 
 #include "LumenRender.h"
 #include "Geometry.cpp"
@@ -35,6 +35,7 @@ using namespace std;
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
 
+extern bool quitRequested;
 extern bool drawSkeleton;
 extern bool drawSquare;
 extern bool headView;
@@ -139,12 +140,11 @@ void updateTracker() {
 }
 void readTracker() {
     if(trackerInit) {
-        while(true) {
+        while(!quitRequested) {
             trackerLock=true;
             tracker.read(trackerData, 42);
             updateTracker();
             trackerLock=false;
-            //usleep(10*1000);
         }
     }
 }
@@ -152,35 +152,39 @@ void readTracker() {
 // yes I know this is horrible - fileRead blocks if no data.
 boost::thread firstReadThread;
 void firstRead() {
-    tracker.read(trackerData, 42);
-    if(getInt16(trackerData)==-32767) {
-        int smoothlen=50;
-        a = new SmoothData(getYawVal(trackerData+2+0),smoothlen,0);
-        b = new SmoothData(getPitchVal(trackerData+2+4),smoothlen,0);
-        c = new SmoothData(getRollVal(trackerData+2+8),smoothlen,0);
-        trackerInit = true;
-        for(int i=0; i<smoothlen; i++) {
-            tracker.read(trackerData, 42);
-            updateTracker();
+    usleep(1000*1000);
+    if(tracker.is_open()) {
+        tracker.rdbuf()->pubsetbuf(0, 0);
+        tracker.read(trackerData, 42);
+        if(getInt16(trackerData)==-32767) {
+            int smoothlen=50;
+            a = new SmoothData(getYawVal(trackerData+2+0),smoothlen,0);
+            b = new SmoothData(getPitchVal(trackerData+2+4),smoothlen,0);
+            c = new SmoothData(getRollVal(trackerData+2+8),smoothlen,0);
+            trackerInit = true;
+            for(int i=0; i<smoothlen; i++) {
+                tracker.read(trackerData, 42);
+                updateTracker();
+            }
+            //initPitch = Pitch->get();
+            initYaw = getYaw();//Yaw->get();
+            //initRoll = Roll->get();
+            trackerThread = boost::thread(readTracker);
+            fprintf(stderr, "Tracker initialized.\n");
+        } else {
+            fprintf(stderr, "Can't read from tracker: %d\n", getInt16(trackerData));
+            quitRequested = true;
         }
-        //initPitch = Pitch->get();
-        initYaw = getYaw();//Yaw->get();
-        //initRoll = Roll->get();
-        trackerThread = boost::thread(readTracker);
+    } else {
+        fprintf(stderr, "Can't open from tracker\n");
+        quitRequested = true;
     }
 }
 void initTracker() {
     tracker.open("/dev/hidraw0", ios::in|ios::binary);
-    usleep(1000*1000);
-    if(tracker.is_open()) {
-        #ifdef LUMEN_TRACKER_USE 
-        tracker.rdbuf()->pubsetbuf(0, 0);
-        firstReadThread = boost::thread(firstRead);
-        #endif
-    } else {
-        fprintf(stderr, "Can't read from tracker");
-        exit(1);
-    }
+    #ifdef LUMEN_TRACKER_USE 
+    firstReadThread = boost::thread(firstRead);
+    #endif
 }
 #endif
 
@@ -246,7 +250,6 @@ void updateCamera() {
     #else
     if(!cameraLock) {
         cameraLock = true;
-        camThread.join();
         if(frame.data) {
             glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
             if(frame.channels() == 3)
@@ -254,6 +257,7 @@ void updateCamera() {
             else if(frame.channels() == 4)
                 glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGBA, size.width,size.height, 0,GL_BGRA,GL_UNSIGNED_BYTE, frame.data);
         }
+        camThread.join();
         camThread = boost::thread(readCamera);
     }
     #endif
@@ -452,11 +456,18 @@ bool fexists(const char *filename) {
 }*/
 
 void cleanupLumen() {
-    #ifdef LUMEN_CAMERA
-    capture.release();
-    #endif
+    if(!quitRequested) quitRequested = true;
     #ifdef LUMEN_TRACKER
-    tracker.close();
+        fprintf(stderr, "Releasing tracker.\n");
+        #ifdef LUMEN_TRACKER_USE
+        trackerThread.join();
+        #endif
+        tracker.close();
+    #endif
+    #ifdef LUMEN_CAMERA
+        fprintf(stderr, "Releasing camera.\n");
+        camThread.join();
+        capture.release();
     #endif
 }
 
@@ -512,27 +523,26 @@ void renderLumen() {
     glLoadIdentity();
     
     if(headpos != NULL) {
-        #define LUMEN_NORMALHEAD
-        #ifdef LUMEN_NORMALHEAD
-        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
-                  headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
-                  0.0,-1.0,0.0);// up vector 
+        #ifdef LUMEN_TRACKER_USE 
+            Vec3 shVec = (shoulderLeft->getVec3() - shoulderRight->getVec3());
+            shVec = shVec.rotate90();
+            shVec.normalize();
+            //shVec *= 1;
+
+            Vec3 headvec = headpos->getVec3()+shVec;
+
+            if(rand01()>0.9) printf("[%1.2f, %1.2f]\n", shVec.x, shVec.z);
+
+            gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
+                      headpos->X(),headpos->Y(),headpos->Z()+shVec.z, // look-at vector
+                      0.0,-1.0,0.0);// up vector 
         #else
-        Vec3 shVec = (shoulderLeft->getVec3() - shoulderRight->getVec3());
-        shVec = shVec.rotate90();
-        shVec.normalize();
-        //shVec *= 1;
-
-        Vec3 headvec = headpos->getVec3()+shVec;
-
-        if(rand01()>0.9) printf("[%1.2f, %1.2f]\n", shVec.x, shVec.z);
-
-        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
-                  headpos->X(),headpos->Y(),headpos->Z()+shVec.z, // look-at vector
-                  0.0,-1.0,0.0);// up vector 
+            gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
+              headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
+              0.0,-1.0,0.0);// up vector 
         #endif
-        #ifdef LUMEN_TRACKER
-        //glRotatef((getYaw()-initYaw)/10,0,1,0);
+/*        #ifdef LUMEN_TRACKER
+            //glRotatef((getYaw()-initYaw)/10,0,1,0);
         #endif
 
 

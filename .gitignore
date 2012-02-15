@@ -1,4 +1,9 @@
-bin/*
+*scrot.png
+bin/x86-Release/*
+!bin/x86-Release/backdrop.jpg
+!bin/x86-Release/checkerboard.png
+!bin/x86-Release/colorscale.png
+!bin/x86-Release/OpenNIConfig.xml
 lib/*
 src/x86-Release/*
 *~

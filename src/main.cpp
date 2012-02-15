@@ -172,12 +172,14 @@ void LoadCalibration() {
 }
 
 void CleanupExit() {
+    fprintf(stderr, "Lumen Cleanup\n");
+    cleanupLumen();
+    fprintf(stderr, "OpenNI Cleanup\n");
     g_ScriptNode.Release();
     g_Context.Release();
     g_DepthGenerator.Release();
     g_UserGenerator.Release();
     g_Player.Release();
-    cleanupLumen();
 
     exit(EXIT_SUCCESS);
 }
@@ -193,10 +195,10 @@ void glutDisplay(void) {
 }
 
 void glutIdle(void) {
-    if(quitRequested) CleanupExit();
-
-    // Display the frame
-    glutPostRedisplay();
+    if(quitRequested) 
+        CleanupExit(); // Exit
+    else     
+        glutPostRedisplay(); // Display the frame
 }
 
 void glutKeyboard(unsigned char key, int x, int y) {
@@ -319,7 +321,7 @@ void glInit(int* pargc, char** argv) {
     glEnable(GL_TEXTURE_2D);
 }
 
-#define SAMPLE_XML_PATH "../../SamplesConfig.xml"
+#define SAMPLE_XML_PATH "OpenNIConfig.xml"
 
 #define CHECK_RC(nRetVal, what)                                      \
     if(nRetVal != XN_STATUS_OK) {                                    \
