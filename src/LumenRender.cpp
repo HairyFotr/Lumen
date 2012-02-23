@@ -32,6 +32,7 @@
 #include <boost/thread.hpp>
 using namespace std;
 
+extern xn::Context g_Context;
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
 
@@ -276,7 +277,7 @@ void renderCamera() {
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
     
-    glScalef(1.4,1.4,1.4);
+    glScalef(1.4,1.4,1);
     glTranslatef(-60,-105,0);
     
     glColor4f(1,1,1,1);
@@ -474,6 +475,7 @@ void cleanupLumen() {
 float maxX=-10000, minX=+10000;
 
 void renderLumen() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if(firstRender) {
         // init quadric object
         quadric = gluNewQuadric();
@@ -487,8 +489,7 @@ void renderLumen() {
         initTracker();
         #endif
         
-        //menu
-        //squiggle
+        //menu squiggle
         //TODO:a se prvi "neprojectan" point sploh kdaj rabi
         menuSquiggle = new Line(rr,gg,bb,aa, currentBrush);
         
@@ -648,6 +649,8 @@ void renderLumen() {
         lines.Clear();
     }
     
+    g_Context.WaitAnyUpdateAll();
+
     XnUserID aUsers[15];
     XnUInt16 nUsers = 15;
     g_UserGenerator.GetUsers(aUsers, nUsers);
@@ -682,11 +685,11 @@ void renderLumen() {
                     currentLine.linePoints.Add(lastPosition->get(), lastPositionProj->get(), currentThickness);
                 }
                 
-                printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(), lastPosition->X(),lastPosition->Y(),lastPosition->Z());
+                //printf("line begin %d (%1.2f,%1.2f,%1.2f)\n", lines.Count(), lastPosition->X(),lastPosition->Y(),lastPosition->Z());
             } else if(drawingLine==true && isUsingMouse==true && isMouseDown==false) { // line end
                 drawingLine = false;
                 
-                printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition->X(),lastPosition->Y(),lastPosition->Z());
+                //printf("line end (%1.2f,%1.2f,%1.2f)\n", lastPosition->X(),lastPosition->Y(),lastPosition->Z());
                 currentLine.compileLine();
                 lines.Add(currentLine);
             } else if(drawingLine && cancelLine) { // cancel line
@@ -791,7 +794,7 @@ void renderLumen() {
         XnPoint3D sh2 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_SHOULDER));
         if(firstUser) {
             headpos = new SmoothPoint(head, 18, 1);
-            printf("headpos (%1.2f,%1.2f,%1.2f)\n",  headpos->X(),headpos->Y(),headpos->Z());
+            //printf("headpos (%1.2f,%1.2f,%1.2f)\n",  headpos->X(),headpos->Y(),headpos->Z());
             shoulderLeft = new SmoothPoint(sh1, 20, 1);
             shoulderRight = new SmoothPoint(sh2, 20, 1);
         } else {
@@ -1006,8 +1009,8 @@ void renderLumen() {
                     if(menuIsSelected && menuSelected==1) {
                         menuColorPoint = lastPosition->get();
                         XnPoint3D mov = {
-                            -(menuInitColorPoint.X-menuColorPoint.X)/2.0,
-                            (menuInitColorPoint.Y-menuColorPoint.Y)/2.0,
+                            (float)(-(menuInitColorPoint.X-menuColorPoint.X)/2.0),
+                            (float)((menuInitColorPoint.Y-menuColorPoint.Y)/2.0),
                             0
                         };
                         if(fabs(mov.X)>78) mov.X = 78*copysign(1,mov.X);
@@ -1072,8 +1075,8 @@ void renderLumen() {
                     if(menuIsSelected && menuSelected==2) {
                         menuColorPoint = lastPosition->get();
                         XnPoint3D mov = {
-                            -(menuInitColorPoint.X-menuColorPoint.X)/1.5,
-                            (menuInitColorPoint.Y-menuColorPoint.Y)/1.5,
+                            (float)(-(menuInitColorPoint.X-menuColorPoint.X)/1.5),
+                            (float)((menuInitColorPoint.Y-menuColorPoint.Y)/1.5),
                             0
                         };
                         if(fabs(mov.X)>78) mov.X = 78*copysign(1,mov.X);
@@ -1117,10 +1120,11 @@ void renderLumen() {
         }
         glColor4f(1,1,1,1);
         glEnable(GL_BLEND);
-
+        
         glEnable(GL_LIGHTING);
         glEnable(GL_DEPTH_TEST);
     }
 
     firstRender = false;
+    glutSwapBuffers();
 }

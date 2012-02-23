@@ -3,7 +3,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-clock_t getTime() { return clock() / (CLOCKS_PER_SEC / 1000); }
+clock_t getTime() { return clock(); } /// (CLOCKS_PER_SEC / 1000); }
 clock_t getTimeSince(clock_t sincetime) { return getTime()-sincetime; }
 
 float rand01() {

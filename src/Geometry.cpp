@@ -94,10 +94,10 @@ public:
             Vec3 d = items[items.size()-1].point - item.point;
             item.thickness = (140-d.length())/50;
             if(item.thickness < 0.1) item.thickness = 0.1;
-            if(item.thickness > 150) item.thickness = 150;
+            if(item.thickness > 200) item.thickness = 200;
             
-            //average, current has *2 weight
-            float avg = item.thickness*2;
+            //average
+            float avg = item.thickness;
             int i;
             for(i = 1; (items.size()-i >= 0)&&(i < 5); i++) {
                 avg += items[items.size()-i].thickness;
@@ -203,9 +203,10 @@ public:
             else if(bbrush!=-1) brush = bbrush;
 
             // Two-pass rendering - front/back
-            glEnable(GL_CULL_FACE);
-            for(int pass=0; pass<=1; pass++) {
-                if(pass==0) glCullFace(GL_FRONT); else glCullFace(GL_BACK);
+            //glEnable(GL_CULL_FACE);            
+            {
+            //for(int pass=0; pass<=1; pass++) {
+                //if(pass==0) glCullFace(GL_FRONT); else glCullFace(GL_BACK);
                 
                 bool start = true, end = false;
                 for(int p = 0; p < linePoints.Count()-1; p++) {
@@ -293,7 +294,7 @@ public:
                             float angle = unit.angle(d);
                             
                             float size = 3.5;
-                            int polycount = 30;
+                            int polycount = 25;
                             
                             if(start == true) { // start cap
                                 start = false;

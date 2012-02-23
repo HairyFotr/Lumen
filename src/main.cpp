@@ -186,12 +186,7 @@ void CleanupExit() {
 
 // this function is called each frame
 void glutDisplay(void) {
-    glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
-    g_Context.WaitAnyUpdateAll();
     renderLumen();
-    
-    glutSwapBuffers();
 }
 
 void glutIdle(void) {
@@ -218,7 +213,7 @@ void glutKeyboard(unsigned char key, int x, int y) {
 float rr=0,gg=0,bb=0,aa=0.75;
 void processMouse(int button, int state, int x, int y) {
     if(state == GLUT_DOWN) {
-        printf("%d\n", button);
+        //printf("%d\n", button);
         if(button == GLUT_LEFT_BUTTON) {
             isMouseDown = TRUE;
             menuClick = TRUE;
