@@ -2,37 +2,35 @@ import pygame as pg
 import sys
 import time
 import os
+from pygame.locals import *
 
+dataLen = 12
 (width, height) = (1000, 700)
-sep = (width-100)/(12-1)
+sep = (width-100)/(dataLen-1)
 
 # Pygame init
 pg.init()
-window = pg.display.set_mode((width,height), pg.RESIZABLE)
-pg.display.set_caption("Graphs")
+window = pg.display.set_mode((width,height), RESIZABLE)
+pg.display.set_caption("Graph")
 canvas = pg.PixelArray(window)
-white = pg.Color(255,255,255)
-black = pg.Color(0,0,0)
-gray = pg.Color(70,70,70)
+white, gray, black = Color(255,255,255), Color(70,70,70), Color(0,0,0)
 
+maxdata, data, mindata = [-5000]*dataLen, [0]*dataLen, [+5000]*dataLen
 cnt = 0
-data = [0,0,0,0,0,0,0,0,0,0,0,0]
-mindata = [0,0,0,0,0,0,0,0,0,0,0,0]
-maxdata = [0,0,0,0,0,0,0,0,0,0,0,0]
 while True:
     # Handle events
     for event in pg.event.get():
-        if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE: sys.exit()
-        if event.type == pg.QUIT: sys.exit()
-        if event.type == pg.VIDEORESIZE: 
+        if event.type == KEYDOWN and event.key == K_ESCAPE: sys.exit()
+        if event.type == QUIT: sys.exit()
+        if event.type == VIDEORESIZE: 
             width, height = event.size
-            window = pg.display.set_mode((width,height), pg.RESIZABLE)
+            window = pg.display.set_mode((width,height), RESIZABLE)
             sep = (width-100)/(12-1)
             pg.draw.rect(window, black, (0,0,width,height))
 
     # Read data
     exdata = list(data)
-    data = [int(s) for s in sys.stdin.readline()[:-1].split(" ")]
+    data = [int(s) for s in sys.stdin.readline().split(" ")]
     
     # Clear line
     clear = 10
@@ -40,8 +38,7 @@ while True:
     
     # Data lines
     for i in range(len(data)):
-        maxdata[i] = max(data[i], maxdata[i])
-        mindata[i] = min(data[i], mindata[i])
+        maxdata[i], mindata[i] = max(data[i], maxdata[i]), min(data[i], mindata[i])
 
         # Normalize data somewhat
         multi = 1
