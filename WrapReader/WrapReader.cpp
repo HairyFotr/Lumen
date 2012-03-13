@@ -6,10 +6,14 @@
 #include <stdlib.h>
 using namespace std;
 
-int main() {
+int main(int argc, char* argv[]) {
+	if(argc == 1) {
+        fprintf(stderr, "No device set\n");
+		return 1;
+	}
     ifstream file;
-    file.open("/dev/hidraw0", ios::in|ios::binary);
-    usleep(100*1000);
+    file.open(argv[1], ios::in|ios::binary);
+    //usleep(100*1000);
     if(file.is_open()) {
         // Unbuffered reading 
         file.rdbuf()->pubsetbuf(0, 0);
@@ -35,7 +39,8 @@ int main() {
         }
         file.close();
     } else {
-        printf("Could not open device");
+        fprintf(stderr, "Could not open device\n");
+        return 2;
     }
     return 0;
 }

@@ -45,6 +45,7 @@ while True:
 
     # Read data
     read = sys.stdin.readline()[:-1]
+    if(read==""): exit()
     if TXT: print read
 
     # Skip frames
@@ -53,7 +54,6 @@ while True:
     
     # Parse data
     exdata = list(data)
-    if(read==""): exit()
     data = [int(s) for s in read.split(" ")[1:]]
 
     # Clear line
