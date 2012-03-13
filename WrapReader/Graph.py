@@ -30,7 +30,10 @@ while True:
 
     # Read data
     exdata = list(data)
-    data = [int(s) for s in sys.stdin.readline().split(" ")]
+    read = sys.stdin.readline()[:-1]
+    if(read==""): break
+    if "-txt" in sys.argv: print read
+    data = [int(s) for s in read.split(" ")[1:]]
     
     # Clear line
     clear = 10
@@ -61,6 +64,7 @@ while True:
         #print maxdata
 
         # Save screenshot
-        os.system("scrot --focused graphs/"+str(int(time.time()))+".png")
+        if "-png" in sys.argv:
+	        os.system("scrot --focused graphs/"+str(int(time.time()))+".png")
         #pg.image.save(pg.display.get_surface(), "graphs/"+str(int(time.time()))+".png")
 
