@@ -1,5 +1,0 @@
-#!/bin/bash
-
-dev="/dev/hidraw0"
-
-g++ WrapReader.cpp -o WrapReader && sudo chmod +r $dev && ./WrapReader $dev | python -u Graph.py -txt -png > graphs/`date +%s`.txt
