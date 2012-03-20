@@ -1,10 +1,10 @@
 //---------------------------------------------------------------------------
 // Includes
 //---------------------------------------------------------------------------
-#define LUMEN_CAMERA //use camera
-//#define LUMEN_BACKDROP //use backdrop.jpg tracker instead of camera
-#define LUMEN_TRACKER //can has the Wrap 920AR tracker 
-//#define LUMEN_TRACKER_USE //use the tracker
+#define LUMEN_CAMERA // use camera
+//#define LUMEN_BACKDROP // use backdrop.jpg tracker instead of camera
+#define LUMEN_TRACKER // Wrap 920AR tracker 
+#define LUMEN_TRACKER_USE // use the tracker
 
 #include "LumenRender.h"
 #include "Geometry.cpp"
@@ -58,136 +58,6 @@ extern float bb;
 extern float aa;
 
 GLUquadricObj* quadric;
-
-#ifdef LUMEN_TRACKER
-float initPitch, initYaw, initRoll;
-SmoothData *a, *b, *c;
-
-char* trackerData = new char[42];
-bool trackerInit = false;
-bool trackerLock = false;
-boost::thread trackerThread;
-ifstream tracker;
-
-union mix_t {
-  int16_t i;
-  struct {
-    char a;
-    char b;
-  } s;
-} uni;
-int getInt16(char* pos) {
-    uni.s.a = *(pos);
-    uni.s.b = *(pos+1);
-    int res = uni.i;
-    return res;
-}
-union mix_t1 {
-  int i;
-  struct {
-    char a;
-    char b;
-    char c;
-    char d;
-  } s;
-} aaa;
-
-int getInt(char* pos) {
-    aaa.s.c = *(pos);
-    aaa.s.d = *(pos+1);
-    aaa.s.a = *(pos+2);
-    aaa.s.b = *(pos+3);
-    int res = aaa.i;
-    return res;
-}
-
-float notnormal(int a, int min, int max) {
-    return (((a-min)/1000.0)*360.0)/((max-min)/1000.0)-180.0;
-}
-
-float getVal(char* pos, int min, int max) {
-    return notnormal(getInt(pos), min, max);
-}
-
-float lastok=0;
-float straightYaw() { //looks ok if head isn't tilted by pitch/roll
-    if(a->get()>0) {
-        return (1.0*a->get()+1.5*(b->get()-150)+0.05*c->get());                    
-    } else {
-        return (1.0*a->get()+1.5*(b->get()-150)+0.05*c->get());                    
-    }
-}
-float getYaw() {
-    if(fabs(b->get()-150) < 5) {
-        fprintf(stderr, "%2.2f", b->get()-150);
-        lastok = straightYaw();
-        return lastok;
-    } else {
-        int weight = 20;
-        return (lastok*weight+straightYaw())/(weight+1.0);
-    }
-}
-
-float getYawVal(char* pos)   { return getVal(pos, -28966489, 10944869); }
-float getPitchVal(char* pos) { return getVal(pos, -24903612, 19529627); }
-float getRollVal(char* pos)  { return getVal(pos, -98828161, 79757133); }
-
-void updateTracker() {
-    if(trackerInit) {
-        a->insert(getYawVal(trackerData+2+0));
-        b->insert(getPitchVal(trackerData+2+4));
-        c->insert(getRollVal(trackerData+2+8));
-    }
-}
-void readTracker() {
-    if(trackerInit) {
-        while(!quitRequested) {
-            trackerLock=true;
-            tracker.read(trackerData, 42);
-            updateTracker();
-            trackerLock=false;
-        }
-    }
-}
-
-// yes I know this is horrible - fileRead blocks if no data.
-boost::thread firstReadThread;
-void firstRead() {
-    usleep(1000*1000);
-    if(tracker.is_open()) {
-        tracker.rdbuf()->pubsetbuf(0, 0);
-        tracker.read(trackerData, 42);
-        if(getInt16(trackerData)==-32767) {
-            int smoothlen=50;
-            a = new SmoothData(getYawVal(trackerData+2+0),smoothlen,0);
-            b = new SmoothData(getPitchVal(trackerData+2+4),smoothlen,0);
-            c = new SmoothData(getRollVal(trackerData+2+8),smoothlen,0);
-            trackerInit = true;
-            for(int i=0; i<smoothlen; i++) {
-                tracker.read(trackerData, 42);
-                updateTracker();
-            }
-            //initPitch = Pitch->get();
-            initYaw = getYaw();//Yaw->get();
-            //initRoll = Roll->get();
-            trackerThread = boost::thread(readTracker);
-            fprintf(stderr, "Tracker initialized.\n");
-        } else {
-            fprintf(stderr, "Can't read from tracker: %d\n", getInt16(trackerData));
-            quitRequested = true;
-        }
-    } else {
-        fprintf(stderr, "Can't open from tracker\n");
-        quitRequested = true;
-    }
-}
-void initTracker() {
-    tracker.open("/dev/hidraw0", ios::in|ios::binary);
-    #ifdef LUMEN_TRACKER_USE 
-    firstReadThread = boost::thread(firstRead);
-    #endif
-}
-#endif
 
 #ifdef LUMEN_CAMERA
 GLuint makeTexture(int width, int height, int channels, const GLvoid *data) {
@@ -291,6 +161,78 @@ void renderCamera() {
     glDisable(GL_TEXTURE_2D);
     glEnable(GL_LIGHTING);
     glEnable(GL_DEPTH_TEST);
+}
+#endif
+
+#ifdef LUMEN_TRACKER
+float initPitch, initYaw, initRoll;
+SmoothData *a, *b, *c;
+
+char* trackerBlock = new char[42];
+int16_t* trackerBlock16 = (int16_t*)trackerBlock;
+
+int getLoGyroX() { return (trackerBlock16[7]-30)*3; }
+int getLoGyroY() { return (trackerBlock16[8]+20)*3; }
+int getLoGyroZ() { return (trackerBlock16[9]-16)*3; }
+int getHiGyroX() { return trackerBlock16[10]-87; }
+int getHiGyroY() { return trackerBlock16[11]+40; }
+int getHiGyroZ() { return trackerBlock16[12]-31; }
+
+bool trackerInit = false;
+bool trackerLock = false;
+boost::thread trackerThread;
+ifstream tracker;
+
+void updateTracker() {
+    if(trackerInit) {
+        a->insert(a->get()+getLoGyroX());
+        b->insert(b->get()+getLoGyroY());
+        c->insert(c->get()+getLoGyroZ());
+    }
+}
+void readTracker() {
+    if(trackerInit) {
+        while(!quitRequested) {
+            trackerLock=true;
+            tracker.read(trackerBlock, 42);
+            updateTracker();
+            trackerLock=false;
+        }
+    }
+}
+
+// tracker.read blocks if no data.
+boost::thread firstReadThread;
+void firstRead() {
+    if(tracker.is_open()) {
+        tracker.rdbuf()->pubsetbuf(0, 0);
+        tracker.read(trackerBlock, 42);
+        if(trackerBlock16[0] == -32767) {
+            int smoothlen=10;
+            a = new SmoothData(0,smoothlen,0);
+            b = new SmoothData(0,smoothlen,0);
+            c = new SmoothData(0,smoothlen,0);
+            trackerInit = true;
+            for(int i=0; i<smoothlen/2; i++) {
+                tracker.read(trackerBlock, 42);
+                updateTracker();
+            }
+            trackerThread = boost::thread(readTracker);
+            fprintf(stderr, "Tracker initialized.\n");
+        } else {
+            fprintf(stderr, "Can't read from tracker: %d\n", trackerBlock16[0]);
+            quitRequested = true;
+        }
+    } else {
+        fprintf(stderr, "Can't open tracker.\n");
+        quitRequested = true;
+    }
+}
+void initTracker() {
+    tracker.open("/dev/hidraw0", ios::in|ios::binary);
+    #ifdef LUMEN_TRACKER_USE 
+    firstReadThread = boost::thread(firstRead);
+    #endif
 }
 #endif
 
@@ -525,17 +467,11 @@ void renderLumen() {
     
     if(headpos != NULL) {
         #ifdef LUMEN_TRACKER_USE 
-            Vec3 shVec = (shoulderLeft->getVec3() - shoulderRight->getVec3());
-            shVec = shVec.rotate90();
-            shVec.normalize();
-            //shVec *= 1;
-
-            Vec3 headvec = headpos->getVec3()+shVec;
-
-            if(rand01()>0.9) printf("[%1.2f, %1.2f]\n", shVec.x, shVec.z);
-
+            glRotatef(a->get()/100.0, 0,1,0);
+            glRotatef(b->get()/100.0, -1,0,0);
+            glRotatef(c->get()/100.0, 0,0,-1);
             gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
-                      headpos->X(),headpos->Y(),headpos->Z()+shVec.z, // look-at vector
+                      headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
                       0.0,-1.0,0.0);// up vector 
         #else
             gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
