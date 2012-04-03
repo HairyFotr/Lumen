@@ -30,7 +30,7 @@ bool drawingLine = FALSE;
 bool userIsLost = FALSE;
 bool drawSkeleton = TRUE;
 bool drawSquare = TRUE;
-bool quitRequested = FALSE;
+int quitRequested = 0;
 bool headView = TRUE;
 bool doClear = FALSE;
 bool menuEnabled = FALSE;
@@ -43,8 +43,9 @@ bool isMouseDown = FALSE;
 bool isUsingMouse = TRUE;
 int g_TestVar = -2;
 int brushCount = 3;
-float currentThickness=0.75;
+float currentThickness=0.9;
 int currentBrush = 0;
+int testNum = 0;
 
 XnUInt32 currentUser = -1;
 
@@ -181,16 +182,18 @@ void CleanupExit() {
     g_UserGenerator.Release();
     g_Player.Release();
 
-    exit(EXIT_SUCCESS);
+    exit(quitRequested);
 }
+
+bool kinectInit = false;
 
 // this function is called each frame
 void glutDisplay(void) {
-    renderLumen();
+    if(kinectInit) renderLumen();
 }
 
 void glutIdle(void) {
-    if(quitRequested) 
+    if(quitRequested != 0) 
         CleanupExit(); // Exit
     else     
         glutPostRedisplay(); // Display the frame
@@ -198,15 +201,17 @@ void glutIdle(void) {
 
 void glutKeyboard(unsigned char key, int x, int y) {
     switch (key) {
-        case  27: quitRequested = true; break;
-        case 's': drawSkeleton= !drawSkeleton; break;
-        case 'y': drawSquare = !drawSquare; break;
-        case 'S': SaveCalibration(); break;
-        case 'L': LoadCalibration(); break;
-        case 'h': headView = !headView; break;
-        case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'1'; break;
+        case 'a' : testNum++; fprintf(stderr, "(%d)", testNum); break;
+        case 's' : testNum--; fprintf(stderr, "(%d)", testNum); break;
+        case  27: quitRequested = 1; break;
+        //case 's': drawSkeleton= !drawSkeleton; break;
+        //case 'y': drawSquare = !drawSquare; break;
+        //case 'S': SaveCalibration(); break;
+        //case 'L': LoadCalibration(); break;
+        //case 'h': headView = !headView; break;
+        //case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': currentBrush = key-'1'; break;
         case 'c': doClear = true; break;
-        case 'm': isUsingMouse = !isUsingMouse; break;
+        //case 'm': isUsingMouse = !isUsingMouse; break;
     }
 }
 
@@ -241,7 +246,6 @@ void processMouse(int button, int state, int x, int y) {
             }*/
         } else if(button == 3) {//DOWN
             menuScrollDown = TRUE;
-            
            /*if(!menuEnabled) {
                 currentThickness -= 0.1;
                 if(currentThickness < 0.2) {
@@ -249,9 +253,9 @@ void processMouse(int button, int state, int x, int y) {
                 }
             }*/
         }
-        if(button == 8 || button == 7) {
+        /*if(button == 8 || button == 7) {
             system("scrot");
-        }
+        }*/
     } else {
         isMouseDown = FALSE;
     }
@@ -259,16 +263,15 @@ void processMouse(int button, int state, int x, int y) {
 
 void glInit(int* pargc, char** argv) {
     glutInit(pargc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_MULTISAMPLE);
-    glutInitWindowSize(640, 480);
-    glutCreateWindow ("Lumen");
+    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
+    glutInitWindowSize(1024, 768);
+     glutCreateWindow ("Lumen");
     glutFullScreen();
     glutSetCursor(GLUT_CURSOR_NONE);
     //lumen init
     randomColor(rr,gg,bb);
-    currentBrush = randInt(brushCount);    
+    //currentBrush = randInt(brushCount);    
 
-    
     glutDisplayFunc(glutDisplay);
     glutIdleFunc(glutIdle);
     glutKeyboardFunc(glutKeyboard);
@@ -327,11 +330,22 @@ void glInit(int* pargc, char** argv) {
    
 void ctrlChandler(int s){
    printf("Caught signal %d\n",s);
-   quitRequested = true;
+   quitRequested = 1;
 }
 
 int main(int argc, char** argv) {
     srand(time(NULL));
+    #define LUMEN_TRACKER
+    #define LUMEN_TRACKER_USE
+    #ifdef LUMEN_TRACKER
+    initTracker();
+    #endif
+    
+    fprintf(stderr, "Init OpenGL.\n");
+    glInit(&argc, argv);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glutSwapBuffers();    
+
     XnStatus nRetVal = XN_STATUS_OK;
     
     if(argc > 1) {
@@ -340,7 +354,7 @@ int main(int argc, char** argv) {
         nRetVal = g_Context.OpenFileRecording(argv[1], g_Player);
         if(nRetVal != XN_STATUS_OK) {
             printf("Can't open recording %s: %s\n", argv[1], xnGetStatusString(nRetVal));
-            return 1;
+            return 2;
         }
     } else {
         xn::EnumerationErrors errors;
@@ -370,7 +384,7 @@ int main(int argc, char** argv) {
     XnCallbackHandle hUserCallbacks, hCalibrationStart, hCalibrationComplete, hPoseDetected, hCalibrationInProgress, hPoseInProgress;
     if(!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_SKELETON)) {
         printf("Supplied user generator doesn't support skeleton\n");
-        return 1;
+        return 2;
     }
     nRetVal = g_UserGenerator.RegisterUserCallbacks(User_NewUser, User_LostUser, NULL, hUserCallbacks);
     CHECK_RC(nRetVal, "Register to user callbacks");
@@ -383,7 +397,7 @@ int main(int argc, char** argv) {
         g_bNeedPose = FALSE;
         if(!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_POSE_DETECTION)) {
             printf("Pose required, but not supported\n");
-            return 1;
+            return 2;
         }
         nRetVal = g_UserGenerator.GetPoseDetectionCap().RegisterToPoseDetected(UserPose_PoseDetected, NULL, hPoseDetected);
         CHECK_RC(nRetVal, "Register to Pose Detected");
@@ -401,15 +415,20 @@ int main(int argc, char** argv) {
     nRetVal = g_Context.StartGeneratingAll();
     CHECK_RC(nRetVal, "StartGenerating");
 
+    kinectInit = true;
+
+    fprintf(stderr, "Kinect init done.\n");
+
     //catch ctrl c
     struct sigaction sigIntHandler;
     sigIntHandler.sa_handler = ctrlChandler;
     sigemptyset(&sigIntHandler.sa_mask);
     sigIntHandler.sa_flags = 0;
     sigaction(SIGINT, &sigIntHandler, NULL);
-
-    glInit(&argc, argv);
-    glutMainLoop();
+    
+    fprintf(stderr, "Going into main loop.\n");
+        
+    glutMainLoop();    
 }
 
 

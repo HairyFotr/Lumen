@@ -11,6 +11,9 @@
 #include <GL/gl.h>
 #include <ni/XnOpenNI.h>
 #include <ni/XnCppWrapper.h>
+#include <iostream>
+#include <iomanip>
+#include <fstream>
 using namespace std;
 
 //horrible, I know :P
@@ -319,6 +322,18 @@ public:
             glDisable(GL_CULL_FACE);
         }
     }
+    
+    /*void toFile(ofstream f) {
+        f << r << " " << g << " " << b << " " << a << "\n";
+        f << brush << "\n";
+        f << linePoints.Count() << "\n";
+        for(int i=0; i<linePoints.Count(); i++) {
+            LinePoint lp = linePoints[i];
+            f << lp.thickness << "\n";
+            f << lp.projpoint.x << " " << lp.projpoint.y << " " << lp.projpoint.z << "\n";
+        }         
+    }*/
+    
 };
 
 class Lines {
@@ -359,4 +374,10 @@ public:
     void Clear(void) { items.clear(); }  
     int Count(void) { return items.size(); }      
     Line& operator [](int ItemKey) { return items[ItemKey]; }
+    
+    /*void toFile(ofstream f) {
+        if(items.size() > 0)
+            for(int i=0; i < items.size(); i++)
+                items[i].toFile(f);
+    }*/
 };

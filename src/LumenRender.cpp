@@ -24,6 +24,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <time.h>
 #include <algorithm>
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -36,7 +37,8 @@ extern xn::Context g_Context;
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
 
-extern bool quitRequested;
+extern int testNum;
+extern int quitRequested;
 extern bool drawSkeleton;
 extern bool drawSquare;
 extern bool headView;
@@ -147,7 +149,7 @@ void renderCamera() {
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, cameraTextureID);
     
-    glScalef(1.4,1.4,1);
+    glScalef(1.35,1.35,1);
     glTranslatef(-60,-105,0);
     
     glColor4f(1,1,1,1);
@@ -170,29 +172,416 @@ SmoothData *a, *b, *c;
 
 char* trackerBlock = new char[42];
 int16_t* trackerBlock16 = (int16_t*)trackerBlock;
+double* normalBlock = new double[12];
 
-int getLoGyroX() { return (trackerBlock16[7]-30)*3; }
-int getLoGyroY() { return (trackerBlock16[8]+20)*3; }
-int getLoGyroZ() { return (trackerBlock16[9]-16)*3; }
-int getHiGyroX() { return trackerBlock16[10]-87; }
-int getHiGyroY() { return trackerBlock16[11]+40; }
-int getHiGyroZ() { return trackerBlock16[12]-31; }
+double HiGyroMulti = (1/4.333333333333)*(M_PI/180.0);
+
+#define GRAVITY 256
+
+double multi[12] = {
+    3.7037037037037037/1000, 3.3003300330033003/1000, 3.389830508474576/1000, 
+    1*GRAVITY,1*GRAVITY,1*GRAVITY, 
+    1,1,1, 
+    HiGyroMulti,HiGyroMulti,HiGyroMulti
+};
+double offsets[12] = {
+    100.0, -363.0, -5.0, 
+    0,-40,0, 
+    -31,22,-16, 
+    -87,+40,-30
+};
+
+//WE SWAP SOME AXIS RELATIONSHIPS HERE
+//TO GET IN LINE WITH AHRS CODE
+// negative acc x and y
+// negative gyro x then swap x and z
+double getMagX() { return normalBlock[0]; }
+double getMagY() { return normalBlock[1]; }
+double getMagZ() { return normalBlock[2]; }
+
+double getAccX() { return -normalBlock[3]; }
+double getAccY() { return -normalBlock[4]; }
+double getAccZ() { return normalBlock[5]; }
+
+double getLoGyroX() { return -normalBlock[8]; }
+double getLoGyroY() { return normalBlock[7]; }
+double getLoGyroZ() { return -normalBlock[6]; }
+
+double getHiGyroX() { return -normalBlock[11]; }
+double getHiGyroY() { return normalBlock[10]; }
+double getHiGyroZ() { return -normalBlock[9]; }
 
 bool trackerInit = false;
 bool trackerLock = false;
 boost::thread trackerThread;
 ifstream tracker;
 
+
+void dt(timespec start, timespec end, timespec* dif) {
+	if ((end.tv_nsec-start.tv_nsec)<0) {
+		dif->tv_sec = end.tv_sec-start.tv_sec-1;
+		dif->tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} else {
+		dif->tv_sec = end.tv_sec-start.tv_sec;
+		dif->tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+}
+
+////// vector math
+
+//Computes the dot product of two vectors
+double Vector_Dot_Product(double vector1[3],double vector2[3])
+{
+  double op=0;
+  
+  for(int c=0; c<3; c++)
+  {
+  op+=vector1[c]*vector2[c];
+  }
+  
+  return op; 
+}
+
+//Computes the cross product of two vectors
+void Vector_Cross_Product(double vectorOut[3], double v1[3],double v2[3])
+{
+  vectorOut[0]= (v1[1]*v2[2]) - (v1[2]*v2[1]);
+  vectorOut[1]= (v1[2]*v2[0]) - (v1[0]*v2[2]);
+  vectorOut[2]= (v1[0]*v2[1]) - (v1[1]*v2[0]);
+}
+
+//Multiply the vector by a scalar. 
+void Vector_Scale(double vectorOut[3],double vectorIn[3], double scale2)
+{
+  for(int c=0; c<3; c++)
+  {
+   vectorOut[c]=vectorIn[c]*scale2; 
+  }
+}
+
+void Vector_Add(double vectorOut[3],double vectorIn1[3], double vectorIn2[3])
+{
+  for(int c=0; c<3; c++)
+  {
+     vectorOut[c]=vectorIn1[c]+vectorIn2[c];
+  }
+}
+
+//Multiply two 3x3 matrixs. This function developed by Jordi can be easily adapted to multiple n*n matrix's. (Pero me da flojera!). 
+void Matrix_Multiply(double a[3][3], double b[3][3],double mat[3][3])
+{
+  double op[3]; 
+  for(int x=0; x<3; x++)
+  {
+    for(int y=0; y<3; y++)
+    {
+      for(int w=0; w<3; w++)
+      {
+       op[w]=a[x][w]*b[w][y];
+      } 
+      mat[x][y]=0;
+      mat[x][y]=op[0]+op[1]+op[2];
+      
+      double test=mat[x][y];
+    }
+  }
+}
+
+
+
+
+/////
+
+double G_Dt=0;
+
+// Euler angles
+double roll=0;
+double pitch=0;
+double yaw=0;
+
+double MAG_Heading;
+
+double Accel_Vector[3]= {0,0,0}; //Store the acceleration in a vector
+double Gyro_Vector[3]= {0,0,0};//Store the gyros turn rate in a vector
+double Omega_Vector[3]= {0,0,0}; //Corrected Gyro_Vector data
+double Omega_P[3]= {0,0,0};//Omega Proportional correction
+double Omega_I[3]= {0,0,0};//Omega Integrator
+double Omega[3]= {0,0,0};
+
+double errorRollPitch[3]= {0,0,0};
+
+double errorYaw[3]= {0,0,0};
+
+double DCM_Matrix[3][3]= {
+  {
+    1,0,0  }
+  ,{
+    0,1,0  }
+  ,{	
+    0,0,1  }
+}; 
+double Update_Matrix[3][3]={{0,1,2},{3,4,5},{6,7,8}}; //Gyros here
+
+
+double Temporary_Matrix[3][3]={
+  {
+    0,0,0  }
+  ,{
+    0,0,0  }
+  ,{
+    0,0,0  }
+};
+
+double GL_Matrix[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+double GL_MatrixT[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+
+void Compass_Heading() {
+  double MAG_X;
+  double MAG_Y;
+  double cos_roll;
+  double sin_roll;
+  double cos_pitch;
+  double sin_pitch;
+  
+  cos_roll = cos(roll);
+  sin_roll = sin(roll);
+  cos_pitch = cos(pitch);
+  sin_pitch = sin(pitch);
+  
+  // adjust for LSM303 compass axis offsets/sensitivity differences by scaling to +/-0.5 range
+  /*c_magnetom_x = (float)(magnetom_x - SENSOR_SIGN[6]*M_X_MIN) / (M_X_MAX - M_X_MIN) - SENSOR_SIGN[6]*0.5;
+  c_magnetom_y = (float)(magnetom_y - SENSOR_SIGN[7]*M_Y_MIN) / (M_Y_MAX - M_Y_MIN) - SENSOR_SIGN[7]*0.5;
+  c_magnetom_z = (float)(magnetom_z - SENSOR_SIGN[8]*M_Z_MIN) / (M_Z_MAX - M_Z_MIN) - SENSOR_SIGN[8]*0.5;*/
+  
+  // Tilt compensated Magnetic filed X:
+  MAG_X = getMagX()*cos_pitch+getMagY()*sin_roll*sin_pitch+getMagZ()*cos_roll*sin_pitch;
+  // Tilt compensated Magnetic filed Y:
+  MAG_Y = getMagY()*cos_roll-getMagZ()*sin_roll;
+  // Magnetic Heading
+  MAG_Heading = atan2(-MAG_Y,MAG_X);
+  
+  //if(MAG_Heading == nan) quitRequested = true; 
+}
+
+void Normalize(void)
+{
+  double error=0;
+  double temporary[3][3];
+  double renorm=0;
+  
+  error= -Vector_Dot_Product(&DCM_Matrix[0][0],&DCM_Matrix[1][0])*.5; //eq.19
+
+  Vector_Scale(&temporary[0][0], &DCM_Matrix[1][0], error); //eq.19
+  Vector_Scale(&temporary[1][0], &DCM_Matrix[0][0], error); //eq.19
+  
+  Vector_Add(&temporary[0][0], &temporary[0][0], &DCM_Matrix[0][0]);//eq.19
+  Vector_Add(&temporary[1][0], &temporary[1][0], &DCM_Matrix[1][0]);//eq.19
+  
+  Vector_Cross_Product(&temporary[2][0],&temporary[0][0],&temporary[1][0]); // c= a x b //eq.20
+  
+  renorm= .5 *(3 - Vector_Dot_Product(&temporary[0][0],&temporary[0][0])); //eq.21
+  Vector_Scale(&DCM_Matrix[0][0], &temporary[0][0], renorm);
+  
+  renorm= .5 *(3 - Vector_Dot_Product(&temporary[1][0],&temporary[1][0])); //eq.21
+  Vector_Scale(&DCM_Matrix[1][0], &temporary[1][0], renorm);
+  
+  renorm= .5 *(3 - Vector_Dot_Product(&temporary[2][0],&temporary[2][0])); //eq.21
+  Vector_Scale(&DCM_Matrix[2][0], &temporary[2][0], renorm);
+}
+
+/**************************************************/
+
+double constrain(double x, double a, double b){
+    double res = x;
+    res = max(a,res);
+    res = min(b,res);
+    
+    return res;
+}
+
+#define Kp_ROLLPITCH 0.02
+#define Ki_ROLLPITCH 0.00002
+#define Kp_YAW 1.2
+#define Ki_YAW 0.00002
+
+void Drift_correction(void)
+{
+  double mag_heading_x;
+  double mag_heading_y;
+  double errorCourse;
+  //Compensation the Roll, Pitch and Yaw drift. 
+  static double Scaled_Omega_P[3];
+  static double Scaled_Omega_I[3];
+  double Accel_magnitude;
+  double Accel_weight;
+  
+  
+  //*****Roll and Pitch***************
+
+  // Calculate the magnitude of the accelerometer vector TODOxxx
+  //Accel_magnitude = sqrt(Accel_Vector[0]*Accel_Vector[0] + Accel_Vector[1]*Accel_Vector[1] + Accel_Vector[2]*Accel_Vector[2]);
+  //Accel_magnitude = Accel_magnitude / GRAVITY; // Scale to gravity.
+  Accel_magnitude = sqrt(Accel_Vector[0]*Accel_Vector[0] + Accel_Vector[1]*Accel_Vector[1] + Accel_Vector[2]*Accel_Vector[2]);
+  Accel_magnitude = Accel_magnitude / GRAVITY; // Scale to gravity.
+    
+  // Dynamic weighting of accelerometer info (reliability filter)
+  // Weight for accelerometer info (<0.5G = 0.0, 1G = 1.0 , >1.5G = 0.0)
+  Accel_weight = constrain(1 - 2*abs(1 - Accel_magnitude),0,1);  //  
+
+  Vector_Cross_Product(&errorRollPitch[0],&Accel_Vector[0],&DCM_Matrix[2][0]); //adjust the ground of reference
+  Vector_Scale(&Omega_P[0],&errorRollPitch[0],Kp_ROLLPITCH*Accel_weight);
+  
+  Vector_Scale(&Scaled_Omega_I[0],&errorRollPitch[0],Ki_ROLLPITCH*Accel_weight);
+  Vector_Add(Omega_I,Omega_I,Scaled_Omega_I);     
+  
+  //*****YAW***************
+  // We make the gyro YAW drift correction based on compass magnetic heading
+ 
+  mag_heading_x = cos(MAG_Heading);
+  mag_heading_y = sin(MAG_Heading);
+  errorCourse=(DCM_Matrix[0][0]*mag_heading_y) - (DCM_Matrix[1][0]*mag_heading_x);  //Calculating YAW error
+  Vector_Scale(errorYaw,&DCM_Matrix[2][0],errorCourse); //Applys the yaw correction to the XYZ rotation of the aircraft, depeding the position.
+  
+  Vector_Scale(&Scaled_Omega_P[0],&errorYaw[0],Kp_YAW);//.01proportional of YAW.
+  Vector_Add(Omega_P,Omega_P,Scaled_Omega_P);//Adding  Proportional.
+  
+  Vector_Scale(&Scaled_Omega_I[0],&errorYaw[0],Ki_YAW);//.00001Integrator
+  Vector_Add(Omega_I,Omega_I,Scaled_Omega_I);//adding integrator to the Omega_I
+}
+/**************************************************/
+/*
+void Accel_adjust(void)
+{
+ Accel_Vector[1] += Accel_Scale(speed_3d*Omega[2]);  // Centrifugal force on Acc_y = GPS_speed*GyroZ
+ Accel_Vector[2] -= Accel_Scale(speed_3d*Omega[1]);  // Centrifugal force on Acc_z = GPS_speed*GyroY 
+}
+*/
+/**************************************************/
+
+void Matrix_update(void) {
+  Gyro_Vector[0]=getHiGyroX(); //gyro x roll
+  Gyro_Vector[1]=getHiGyroY(); //gyro y pitch
+  Gyro_Vector[2]=getHiGyroZ(); //gyro Z yaw
+  
+  /*printf("gyro: %f %f %f\n", 
+    Gyro_Vector[0]/G_Dt,
+      Gyro_Vector[1]/G_Dt,
+        Gyro_Vector[2]/G_Dt
+  );*/
+  
+  Accel_Vector[0]=getAccX();
+  Accel_Vector[1]=getAccY();
+  Accel_Vector[2]=getAccZ();
+    
+  Vector_Add(&Omega[0], &Gyro_Vector[0], &Omega_I[0]);  //adding proportional term
+  Vector_Add(&Omega_Vector[0], &Omega[0], &Omega_P[0]); //adding Integrator term
+
+  Update_Matrix[0][0]=0;
+  Update_Matrix[0][1]=-G_Dt*Omega_Vector[2];//-z
+  Update_Matrix[0][2]=G_Dt*Omega_Vector[1];//y
+  Update_Matrix[1][0]=G_Dt*Omega_Vector[2];//z
+  Update_Matrix[1][1]=0;
+  Update_Matrix[1][2]=-G_Dt*Omega_Vector[0];//-x
+  Update_Matrix[2][0]=-G_Dt*Omega_Vector[1];//-y
+  Update_Matrix[2][1]=G_Dt*Omega_Vector[0];//x
+  Update_Matrix[2][2]=0;
+
+  Matrix_Multiply(DCM_Matrix,Update_Matrix,Temporary_Matrix); //a*b=c
+
+  for(int x=0; x<3; x++) //Matrix Addition (update)
+  {
+    for(int y=0; y<3; y++)
+    {
+      DCM_Matrix[x][y]+=Temporary_Matrix[x][y];
+    } 
+  }
+}
+
+void Euler_angles(void)
+{
+  pitch = -asin(DCM_Matrix[2][0]);
+  roll = atan2(DCM_Matrix[2][1],DCM_Matrix[2][2]);
+  yaw = atan2(DCM_Matrix[1][0],DCM_Matrix[0][0]);
+
+//  	printf("!ANG:%f,%f,%f\n",roll,pitch,yaw);	  
+}
+
+void GLMatrix(void)
+{
+ GL_Matrix[0]=DCM_Matrix[0][0];
+ GL_Matrix[4]=DCM_Matrix[0][1];
+ GL_Matrix[8]=DCM_Matrix[0][2];
+ GL_Matrix[12]=0;
+
+ GL_Matrix[1]=DCM_Matrix[1][0];
+ GL_Matrix[5]=DCM_Matrix[1][1];
+ GL_Matrix[9]=DCM_Matrix[1][2];
+ GL_Matrix[13]=0;
+
+ GL_Matrix[2]=DCM_Matrix[2][0];
+ GL_Matrix[6]=DCM_Matrix[2][1];
+ GL_Matrix[10]=DCM_Matrix[2][2];    
+ GL_Matrix[14]=0;
+
+ GL_Matrix[3]=0;
+ GL_Matrix[7]=0;
+ GL_Matrix[11]=0;
+ GL_Matrix[15]=1;
+
+ GL_MatrixT[0]=DCM_Matrix[0][0];
+ GL_MatrixT[1]=DCM_Matrix[0][1];
+ GL_MatrixT[2]=DCM_Matrix[0][2];
+ GL_MatrixT[3]=0;
+
+ GL_MatrixT[4]=DCM_Matrix[1][0];
+ GL_MatrixT[5]=DCM_Matrix[1][1];
+ GL_MatrixT[6]=DCM_Matrix[1][2];
+ GL_MatrixT[7]=0;
+
+ GL_MatrixT[8]=DCM_Matrix[2][0];
+ GL_MatrixT[9]=DCM_Matrix[2][1];
+ GL_MatrixT[10]=DCM_Matrix[2][2];    
+ GL_MatrixT[11]=0;
+
+ GL_MatrixT[12]=0;
+ GL_MatrixT[13]=0;
+ GL_MatrixT[14]=0;
+ GL_MatrixT[15]=1;
+
+}
+
+////////
+
+
+timespec timer, timer_old, diff;
+
+
 void updateTracker() {
-    if(trackerInit) {
-        a->insert(a->get()+getLoGyroX());
-        b->insert(b->get()+getLoGyroY());
-        c->insert(c->get()+getLoGyroZ());
+    if(trackerInit){
+        for(int i=0; i<12; i++) {
+            normalBlock[i] = (trackerBlock16[i+1]+offsets[i])*multi[i]/1000.0;            
+        }
+        
+        timer_old = timer;
+        clock_gettime(CLOCK_REALTIME, &timer);
+        dt(timer_old, timer, &diff);
+        G_Dt = (diff.tv_sec + (diff.tv_nsec/1000000000.0));   // Real time of loop run. We use this on the DCM algorithm (gyro integration time)
+                
+        // *** DCM algorithm
+        Compass_Heading(); // Calculate magnetic heading  
+        
+        // Calculations...
+        Matrix_update(); 
+        Normalize();
+        GLMatrix();
+        Drift_correction();
+        Euler_angles();
+                // ***
     }
 }
 void readTracker() {
     if(trackerInit) {
-        while(!quitRequested) {
+        while(quitRequested == 0) {
             trackerLock=true;
             tracker.read(trackerBlock, 42);
             updateTracker();
@@ -208,7 +597,8 @@ void firstRead() {
         tracker.rdbuf()->pubsetbuf(0, 0);
         tracker.read(trackerBlock, 42);
         if(trackerBlock16[0] == -32767) {
-            int smoothlen=10;
+            clock_gettime(CLOCK_REALTIME, &timer);
+            /*int smoothlen=10;
             a = new SmoothData(0,smoothlen,0);
             b = new SmoothData(0,smoothlen,0);
             c = new SmoothData(0,smoothlen,0);
@@ -216,23 +606,28 @@ void firstRead() {
             for(int i=0; i<smoothlen/2; i++) {
                 tracker.read(trackerBlock, 42);
                 updateTracker();
-            }
-            trackerThread = boost::thread(readTracker);
+            }*/
+            trackerInit = true;
             fprintf(stderr, "Tracker initialized.\n");
+            trackerThread = boost::thread(readTracker);
         } else {
             fprintf(stderr, "Can't read from tracker: %d\n", trackerBlock16[0]);
-            quitRequested = true;
+            quitRequested = 2;
         }
     } else {
         fprintf(stderr, "Can't open tracker.\n");
-        quitRequested = true;
+        quitRequested = 2;
     }
 }
+
 void initTracker() {
-    tracker.open("/dev/hidraw0", ios::in|ios::binary);
-    #ifdef LUMEN_TRACKER_USE 
-    firstReadThread = boost::thread(firstRead);
-    #endif
+    if(!trackerInit) {
+        fprintf(stderr, "Tracker init started.\n");
+        tracker.open("/dev/hidraw2", ios::in|ios::binary);
+        #ifdef LUMEN_TRACKER_USE 
+        firstReadThread = boost::thread(firstRead);
+        #endif
+    }
 }
 #endif
 
@@ -266,7 +661,6 @@ void nextBrush() {
     currentBrush %= brushCount;
 }
 
-
 bool firstRender = true;
 bool firstUser = true;
 
@@ -283,41 +677,13 @@ XnPoint3D GetLimbPosition(XnUserID player, XnSkeletonJoint eJoint) {
     return joint.position;
 }
 XnPoint3D getProj(XnPoint3D current) {
-    XnPoint3D proj = xnCreatePoint3D(3,3,3);
+    return current;
+    /*XnPoint3D proj = xnCreatePoint3D(3,3,3);
     g_DepthGenerator.ConvertRealWorldToProjective(1, &current, &proj);
-    return proj;
+    return proj;*/
 }
 
-/*SmoothPoint *hand1=NULL, *hand2=NULL;
 void DrawLimb(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
-    if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
-    
-    XnSkeletonJointPosition joint1, joint2;
-    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint1, joint1);
-    g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(player, eJoint2, joint2);
-    
-    if(joint1.fConfidence <= 0 || joint2.fConfidence <= 0) return;
-    
-    XnPoint3D pt[2] = {joint1.position, joint2.position};
-    
-    g_DepthGenerator.ConvertRealWorldToProjective(2, pt, pt);
-    
-    Vec3::makeLonger(pt[0], pt[1], 20);
-    if(hand1==NULL) {
-        hand1 = new SmoothPoint(pt[0], 12,1);
-        hand2 = new SmoothPoint(pt[1], 12,1);
-    } else {
-        hand1->insert(pt[0]);
-        lastPositionProj->insert(pt[1]);
-    }
-    
-    glVertex3f(hand1->X(), hand1->Y(), hand1->Z());
-    glVertex3f(lastPositionProj->X(), lastPositionProj->Y(), lastPositionProj->Z());
-    
-    /*glVertex3f(pt[0].X, pt[0].Y, pt[0].Z);
-    glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);*/
-//}
-void DrawLimb2(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2) {
     if(!g_UserGenerator.GetSkeletonCap().IsTracking(player)) return;
     
     XnSkeletonJointPosition joint1, joint2;
@@ -334,8 +700,16 @@ void DrawLimb2(XnUserID player, XnSkeletonJoint eJoint1, XnSkeletonJoint eJoint2
     glVertex3f(pt[1].X, pt[1].Y, pt[1].Z);
 }
 void DrawLine(XnPoint3D p1, XnPoint3D p2) {
-    glVertex3f(p1.X, p1.Y, p1.Z);
-    glVertex3f(p2.X, p2.Y, p2.Z);
+    float th = 0.7;
+    glColor4f(1,1,1,1);
+    glDisable(GL_LIGHTING);
+    glBegin(GL_QUADS);
+    glVertex3f(p1.X-th, p1.Y, p1.Z);
+    glVertex3f(p1.X+th, p1.Y, p1.Z);
+    glVertex3f(p2.X+th, p2.Y, p2.Z);
+    glVertex3f(p2.X-th, p2.Y, p2.Z);
+    glEnd();
+    glEnable(GL_LIGHTING);
 }
 
 void drawQuad(float x, float y) {
@@ -394,12 +768,8 @@ bool fexists(const char *filename) {
     return ifile;
 }
 
-/*void saveData() {
-    lines
-}*/
-
 void cleanupLumen() {
-    if(!quitRequested) quitRequested = true;
+    if(quitRequested==0) quitRequested = 1;
     #ifdef LUMEN_TRACKER
         fprintf(stderr, "Releasing tracker.\n");
         #ifdef LUMEN_TRACKER_USE
@@ -412,23 +782,48 @@ void cleanupLumen() {
         camThread.join();
         capture.release();
     #endif
+    //save();
+}
+/*
+std::string timestr(time_t t) {
+    std::stringstream strm;
+    strm << "save/"
+    strm << t;
+    strm << ".lum"
+    return strm.str();
+}
+
+void save() {
+    ofstream f;
+    f.open(timestr(time(0)));
+    lines.toFile(f);
+    f.close();
+}
+*/
+XnPoint3D convertKinect(XnPoint3D in) {
+    XnPoint3D out = { -in.Z, in.X, -in.Y };
+    return out;
+}
+XnPoint3D convertGlasses(XnPoint3D in) {
+    XnPoint3D out = { in.Y, -in.Z, -in.X };
+    return out;
 }
 
 float maxX=-10000, minX=+10000;
-
+int cnt = 0;
 void renderLumen() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    cnt++;
     if(firstRender) {
+        fprintf(stderr, "Render init.\n");
         // init quadric object
         quadric = gluNewQuadric();
         gluQuadricNormals(quadric, GLU_SMOOTH);
-        
+     
+        glDisable(GL_CULL_FACE);
         // init camera and its texture
         #ifdef LUMEN_CAMERA
         initCamera();
-        #endif
-        #ifdef LUMEN_TRACKER
-        initTracker();
         #endif
         
         //menu squiggle
@@ -436,7 +831,7 @@ void renderLumen() {
         menuSquiggle = new Line(rr,gg,bb,aa, currentBrush);
         
         Vec3 dummy = Vec3(0,0,0);
-        float i=0, n=4; //yarly :P
+        float i=0, n=4;
         menuSquiggle->linePoints.Add(dummy,{n*i++,+0.0f*n,0});
         menuSquiggle->linePoints.Add(dummy,{n*i++,+0.7f*n,0});
         menuSquiggle->linePoints.Add(dummy,{n*i++,+1.0f*n,0});
@@ -449,15 +844,122 @@ void renderLumen() {
         
         menuColorPicData = makeTexture("colorscale.png", menuColorPic);
         menuCheckersPicData = makeTexture("checkerboard.png", menuCheckersPic);
+        fprintf(stderr, "Render init done.\n");
     }
     
     #ifdef LUMEN_CAMERA
     updateCamera();
     renderCamera();
     #endif
-    
-    // lines and body
+   
+    ///////
+  /*  firstRender = false;
+    glDisable(GL_LIGHTING);
     glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45, (640/480+0.0), 0.1, 500.0);
+    glScalef(1,1,1);
+    
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    gluLookAt(0,0,0,
+              2,0,0, // look-at vector
+              //0,-1,0);
+              0, 0, -1);// up vector 
+
+    glMultMatrixd(GL_MatrixT);
+
+    
+//    glRotatef(roll*180/M_PI, 0,0,1);
+//    glRotatef(pitch*180/M_PI, 1,0,0);
+//    glRotatef((yaw+1.5)*180/M_PI, 0,-1,0);
+
+    //glRotatef(cnt/10.0, 0,0,1);
+    
+    glPushMatrix();
+    glScalef(0.2,0.2,0.2);
+    glBegin(GL_QUADS);            
+        glColor4f(0.25,0,0,1);
+        // left
+        glNormal3f(-1, 0, 0);
+        glVertex3f(-1, 1, 1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f(-1,-1, 1);
+        // right
+        glNormal3f( 1, 0, 0);
+        glVertex3f( 1, 1,-1);
+        glVertex3f( 1, 1, 1);
+        glVertex3f( 1,-1, 1);
+        glVertex3f( 1,-1,-1);
+
+        glColor4f(0,0.25,0,1);
+        // top
+        glNormal3f( 0, 1, 0);
+        glVertex3f( 1, 1,-1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f(-1, 1, 1);
+        glVertex3f( 1, 1, 1);
+        // bottom 
+        glNormal3f( 0,-1, 1);
+        glVertex3f( 1,-1, 1);
+        glVertex3f(-1,-1, 1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f( 1,-1,-1);
+
+        glColor4f(0,0,0.25,1);
+        // front
+        glNormal3f( 0, 0, 1);
+        glVertex3f( 1, 1, 1);
+        glVertex3f(-1, 1, 1); 
+        glVertex3f(-1,-1, 1);
+        glVertex3f( 1,-1, 1);
+        // back
+        glNormal3f( 0, 0,-1);
+        glVertex3f( 1,-1,-1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f( 1, 1,-1);
+    glEnd();
+    glPopMatrix();
+
+    glBegin(GL_LINES);
+    glColor4f(0.75,0,0,1);
+    glVertex3d(-1, 0, 0);
+    glVertex3d(1, 0, 0);
+    glColor4f(0,0.75,0,1);
+    glVertex3d(0, -1, 0);
+    glVertex3d(0, 1, 0);
+    glColor4f(0,0,1,1);
+    glVertex3d(0, 0, -1);
+    glVertex3d(0, 0, 1);
+
+    glColor4f(1,0,0,1);
+    glVertex3d(0, 0, 0);
+    glVertex3d(getMagX(), getMagY(), getMagZ());
+
+    glColor4f(0,1,0,1);
+    glVertex3d(0, 0, 0);
+    glVertex3d(getAccX(), getAccY(), getAccZ());
+    glEnd();
+
+    glutSwapBuffers();
+    return;
+    ////////////
+
+//*/
+
+
+
+
+
+
+
+
+
+    // lines and body
+    /*glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluPerspective(10, (640/480+0.0), 1.0, 5000.0);
     glScalef(-1,1,1);
@@ -467,117 +969,104 @@ void renderLumen() {
     
     if(headpos != NULL) {
         #ifdef LUMEN_TRACKER_USE 
-            glRotatef(a->get()/100.0, 0,1,0);
-            glRotatef(b->get()/100.0, -1,0,0);
-            glRotatef(c->get()/100.0, 0,0,-1);
+            glRotatef((yaw+1.5)*180/M_PI, 0,-1,0);
+            //glRotatef(pitch*180/M_PI, 1,0,0);
+            //glRotatef(roll*180/M_PI, 0,0,1);
+            printf("%f %f %f \n", yaw, pitch, roll);
             gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
                       headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
                       0.0,-1.0,0.0);// up vector 
         #else
             gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),    // camera position
-              headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
-              0.0,-1.0,0.0);// up vector 
+                      headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
+                      0.0,-1.0,0.0);// up vector 
         #endif
-/*        #ifdef LUMEN_TRACKER
-            //glRotatef((getYaw()-initYaw)/10,0,1,0);
-        #endif
+    }*/
 
+    //glDisable(GL_LIGHTING);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(10, (640/480+0.0), 0.1, 4000.0);
+    
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
 
-    //if(headpos != NULL) {
-        /*glTranslatef(headpos->X(),headpos->Y(),headpos->Z());
-
-        if(trackerInit) {
-            //fprintf(stderr, "%f\t%f\t%f", (Yaw->get()-initYaw), (Roll->get()-initRoll), (Pitch->get()-initPitch));
-
-
-            glRotatef((Yaw->get()-initYaw)/2250000.0,1,0,0);
-            glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
-            glRotatef((Roll->get()-initRoll)/2250000.0,0,0,1);
-        }
-
-        glTranslatef(-headpos->X(),-headpos->Y(),-headpos->Z());
-        /*#ifdef LUMEN_TRACKER
-        if(trackerInit) {
-            //fprintf(stderr, "%f\t%f\t%f", (Yaw->get()-initYaw), (Roll->get()-initRoll), (Pitch->get()-initPitch));
-
-
-            glRotatef((Yaw->get()-initYaw)/2250000.0,1,0,0);
-            glRotatef(-(Roll->get()-initRoll)/2250000.0,0,0,1);
-
-            glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
-        }
-        #endif*/
-        /*gluLookAt(0,0,0,    // camera position
-
-                headpos->X(),headpos->Y(),headpos->Z(),
-                  //261.32,256.29,3314.46,
-                  //headpos->X(),headpos->Y(),headpos->Z()-10, // look-at vector
-                  0.0,-1.0,0.0);// up vector */
-        //glRotatef((Roll->get()-initRoll)/2250000.0,0,0,1);
-        /*XnPoint3D shL = shoulderLeft->get();
-        XnPoint3D shR = shoulderRight->get();
-        Vec3 turn = Vec3( //shoulder vector
-
-            shL.X-shR.X,
-            shL.Y-shR.Y,
-            shL.Z-shR.Z
-        );
-
-        turn = Vec3( //forward vector
-            -turn.z,
-            0,
-            turn.x
-
-        );
-        turn.normalize();
-        turn*=10;
-        
-
-        if(menuClick) fprintf(stderr, "[%f,%f]", turn.x, turn.z);
-        */
-        
-        //fprintf(stderr, "[%f]\n", getYaw());
-        //glRotatef((getYaw())/3,0,1,0);
-            //}        
-            /*gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),
-                  0,200,0,
-                  //headpos->X()+getYaw(),headpos->Y(),headpos->Z(),
-                  //headpos->X()+sin(getYaw()*3*M_PI/180.0),200,headpos->Z()+cos(getYaw()*3*M_PI/180.0),
-                  0.0,-1.0,0.0);
-        
-/*        gluLookAt(headpos->X(),headpos->Y(),headpos->Z(),
-                  0,200,0,
-                  //headpos->X()+getYaw(),headpos->Y(),headpos->Z(),
-                  //headpos->X()+sin(getYaw()*3*M_PI/180.0),200,headpos->Z()+cos(getYaw()*3*M_PI/180.0),
-                  0.0,-1.0,0.0);
-//        glRotatef(getYaw()/5,0,1,0);
-        
-        
-//        fprintf(stderr, "[%f]\n", getYaw());
-        /*fprintf(stderr, "[%3.2f  %3.2f  %3.2f  |  %f  %f  %f]\n", 
-            headpos->X(),headpos->Y(),headpos->Z(),
-            (headpos->X()+sin(getYaw()*3*M_PI/180.0)),200,(headpos->Z()+cos(getYaw()*3*M_PI/180.0)));*/
-        //if(isMouseDown) glRotatef(getYaw(),1,0,0);
-        
-        //glRotatef((Pitch->get()-initPitch)/2250000.0,0,1,0);
-        //glRotatef((Roll->get()-initRoll)/22500000.0,0,0,1);
-        /*
-        Line *l = new Line(rr,gg,bb,aa, currentBrush);        
-        Vec3 dummy = Vec3(0,0,0);
-        l->linePoints.Add(dummy,{100.52,-256.42,1765.34});
-        l->linePoints.Add(dummy,{-153.22,-283.74,1852.76});
-        l->renderLine();
-
-        Line *l2 = new Line(rr,gg,bb,aa, currentBrush);        
-        l2->linePoints.Add(dummy,{-163.88,-52.57,2291.42});
-        l2->linePoints.Add(dummy,{-237.98,-406.69,2358.03});
-        l2->renderLine();
-
-        Line *l3 = new Line(rr,gg,bb,aa, currentBrush);        
-        l3->linePoints.Add(dummy,{-250.17,-494.26,2449.86});
-        l3->linePoints.Add(dummy,{-333.52,-245.33,2227.22});
-        l3->renderLine();*/
+    gluLookAt(0,0,0,
+              10,0,0, // look-at vector
+              //0,-1,0);
+              0, 0, -1);// up vector 
+    
+    glMultMatrixd(GL_MatrixT);
+    glRotatef(188,0,0,1);
+    glRotatef(-5,0,1,0);
+    
+    if(headpos != NULL) {
+        glTranslatef(headpos->Z(), -headpos->X(), headpos->Y());
+        //if(isMouseDown && lastPositionProj != NULL) {
+        //printf("kin head: %f %f %f\n", -headpos->Z(), headpos->X(), -headpos->Y());
+          //printf("kin  arm: %f %f %f\n", lastPositionProj->X(), lastPositionProj->Y(), lastPositionProj->Z());
+        //}
     }
+    //printf("matrix: %f %f %f %f \n", GL_MatrixT[0], GL_MatrixT[1], GL_MatrixT[2], GL_MatrixT[3]);
+
+    /*glBegin(GL_QUADS);            
+        glColor4f(0.25,0,0,0.85);
+
+        glVertex3f(-1000, 90,    80);
+        glVertex3f(-1000, -1200, 80);
+        glVertex3f(-1000, -1200, 500);
+        glVertex3f(-1000, 90,    500);
+
+    glEnd();*/
+
+    /*glPushMatrix();
+    glScalef(20,20,20);
+    glBegin(GL_QUADS);            
+        glColor4f(0.25,0,0,0.85);
+        // left
+        glNormal3f(-1, 0, 0);
+        glVertex3f(-1, 1, 1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f(-1,-1, 1);
+        // right
+        glNormal3f( 1, 0, 0);
+        glVertex3f( 1, 1,-1);
+        glVertex3f( 1, 1, 1);
+        glVertex3f( 1,-1, 1);
+        glVertex3f( 1,-1,-1);
+
+        glColor4f(0,0.25,0,0.85);
+        // top
+        glNormal3f( 0, 1, 0);
+        glVertex3f( 1, 1,-1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f(-1, 1, 1);
+        glVertex3f( 1, 1, 1);
+        // bottom 
+        glNormal3f( 0,-1, 1);
+        glVertex3f( 1,-1, 1);isMouseDown
+        glVertex3f(-1,-1, 1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f( 1,-1,-1);
+
+        glColor4f(0,0,0.25,0.85);
+        // front
+        glNormal3f( 0, 0, 1);
+        glVertex3f( 1, 1, 1);
+
+        glVertex3f(-1, 1, 1); 
+        glVertex3f(-1,-1, 1);
+        glVertex3f( 1,-1, 1);
+        // back
+        glNormal3f( 0, 0,-1);
+
+        glVertex3f( 1,-1,-1);
+        glVertex3f(-1,-1,-1);
+        glVertex3f(-1, 1,-1);
+        glVertex3f( 1, 1,-1);
+    glEnd();
+    glPopMatrix();*/
 
     if(doClear) {
         doClear = false;
@@ -591,18 +1080,26 @@ void renderLumen() {
     XnUInt16 nUsers = 15;
     g_UserGenerator.GetUsers(aUsers, nUsers);
     
-    //for(int i = 0; i < nUsers; i++) {
     if(nUsers>0 && currentUser>=0 && currentUser<=nUsers) {
         int i = currentUser-1;
-        XnPoint3D hand = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_HAND);
-        XnPoint3D elbow = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_ELBOW);
-        hand = Vec3::makeLonger(elbow, hand, -100);
+        XnPoint3D hand0 = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_HAND);
+        XnPoint3D elbow0 = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_ELBOW);
+        //hand0 = Vec3::makeLonger(elbow0, hand0, -100);
+        hand0 = Vec3::makeLonger(elbow0, hand0, -120);
+
+        XnPoint3D hand0proj = getProj(hand0);
+        
+        XnPoint3D hand = convertKinect(hand0);
+        XnPoint3D handproj = convertKinect(hand0proj);
+        XnPoint3D elbowproj = getProj(elbow0);
+        elbowproj = convertKinect(elbowproj);
+
         if(firstUser) {
-            lastPosition = new SmoothPoint(hand, 15, 1);
-            lastPositionProj = new SmoothPoint(getProj(hand), 15, 1);
+            lastPosition = new SmoothPoint(hand, 20, 1);
+            lastPositionProj = new SmoothPoint(handproj, 20, 1);
         } else {
             lastPosition->insert(hand);
-            lastPositionProj->insert(getProj(hand));
+            lastPositionProj->insert(handproj);
         }
 
         /*if(headpos != NULL) {
@@ -642,11 +1139,7 @@ void renderLumen() {
         if(drawingLine) currentLine.renderLine();
         
         if(drawSkeleton) {
-            glColor4f(1,1,1,1);
-            glBegin(GL_LINES);
-                DrawLine(lastPositionProj->get(), getProj(elbow));
-                //DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND);
-            glEnd();
+            DrawLine(lastPositionProj->get(), elbowproj);
             
             glColor4f(rr,gg,bb,aa);
             glTranslatef(lastPositionProj->X(), lastPositionProj->Y(), lastPositionProj->Z());
@@ -710,18 +1203,9 @@ void renderLumen() {
                 }
             }
             glTranslatef(-lastPositionProj->X(), -lastPositionProj->Y(), -lastPositionProj->Z());
-            //put this inside a method, you silly person
-/*            XnSkeletonJointPosition joint;
-            g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(aUsers[i], XN_SKEL_RIGHT_HAND, joint);
-            if(joint.fConfidence > 0) {
-                XnPoint3D pt = joint.position;
-                
-                g_DepthGenerator.ConvertRealWorldToProjective(1, &pt, &pt);
-
-            }*/
             glColor4f(1,1,1,1);
             glBegin(GL_LINES);
-            DrawLimb2(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_SHOULDER);
+            DrawLimb(aUsers[i], XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_SHOULDER);
             glEnd();
         }
 
@@ -729,7 +1213,7 @@ void renderLumen() {
         XnPoint3D sh1 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_LEFT_SHOULDER));
         XnPoint3D sh2 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_SHOULDER));
         if(firstUser) {
-            headpos = new SmoothPoint(head, 18, 1);
+            headpos = new SmoothPoint(head, 50, 0);
             //printf("headpos (%1.2f,%1.2f,%1.2f)\n",  headpos->X(),headpos->Y(),headpos->Z());
             shoulderLeft = new SmoothPoint(sh1, 20, 1);
             shoulderRight = new SmoothPoint(sh2, 20, 1);
@@ -759,24 +1243,26 @@ void renderLumen() {
         //
         // yes yes... horrible and handcoded :)
         if(menuEnabled) {
+            XnPoint3D lastPos = convertGlasses(lastPosition->get());
+        
             if(menuEnabledInit) {
                 menuEnabledInit = false;
                 menuIsSelected = false;
-                menuHandInit = lastPosition->get();
+                menuHandInit = lastPos;
                 menuHandInit.X += 75;
                 menuClick = false;
             }
             if(!menuIsSelected) {
-                if(lastPosition->get().X > menuHandInit.X+50) menuSelected = 2; 
-                else if(lastPosition->get().X < menuHandInit.X-50) menuSelected = 0; 
+                if(lastPos.X > menuHandInit.X+50) menuSelected = 2; 
+                else if(lastPos.X < menuHandInit.X-50) menuSelected = 0; 
                 else menuSelected = 1;
 
                 if(menuClick) {
-                    menuHandInit = lastPosition->get();
+                    menuHandInit = lastPos;
                     menuIsSelected = true;
                     if(menuIsSelected==1) {
-                        menuInitColorPoint = lastPosition->get();
-                        menuColorPoint = lastPosition->get();
+                        menuInitColorPoint = lastPos;
+                        menuColorPoint = lastPos;
                     }
                     menuClick = false;
                 }
@@ -862,17 +1348,17 @@ void renderLumen() {
                     }
                     
                     
-                    if(lastPosition->get().Y > menuHandInit.Y+90) {
-                        menuHandInit = lastPosition->get();
+                    if(lastPos.Y > menuHandInit.Y+90) {
+                        menuHandInit = lastPos;
                         prevBrush();
-                    } else if(lastPosition->get().Y < menuHandInit.Y-90) {
-                        menuHandInit = lastPosition->get();
+                    } else if(lastPos.Y < menuHandInit.Y-90) {
+                        menuHandInit = lastPos;
                         nextBrush();
                     }                    
                     
                     if(menuClick) {
                         menuIsSelected = false;
-                        menuHandInit = lastPosition->get();
+                        menuHandInit = lastPos;
                         menuHandInit.X += 75;
                         menuClick = false;
                     }
@@ -924,7 +1410,7 @@ void renderLumen() {
                 if(menuIsSelected && menuSelected==1) {
                     if(menuClick) {                        
                         menuIsSelected = false;
-                        menuHandInit = lastPosition->get();
+                        menuHandInit = lastPos;
                         menuClick = false;
                     }
                 }
@@ -943,7 +1429,7 @@ void renderLumen() {
                     drawQuad(80,80);
                     glDisable(GL_BLEND);
                     if(menuIsSelected && menuSelected==1) {
-                        menuColorPoint = lastPosition->get();
+                        menuColorPoint = lastPos;
                         XnPoint3D mov = {
                             (float)(-(menuInitColorPoint.X-menuColorPoint.X)/2.0),
                             (float)((menuInitColorPoint.Y-menuColorPoint.Y)/2.0),
@@ -977,7 +1463,7 @@ void renderLumen() {
                 if(menuIsSelected && menuSelected==2) {
                     if(menuClick) {
                         menuIsSelected = false;
-                        menuHandInit = lastPosition->get();
+                        menuHandInit = lastPos;
                         menuHandInit.X -= 75;
                         menuClick = false;
                     }
@@ -1009,7 +1495,7 @@ void renderLumen() {
                     glDisable(GL_BLEND);
 
                     if(menuIsSelected && menuSelected==2) {
-                        menuColorPoint = lastPosition->get();
+                        menuColorPoint = lastPos;
                         XnPoint3D mov = {
                             (float)(-(menuInitColorPoint.X-menuColorPoint.X)/1.5),
                             (float)((menuInitColorPoint.Y-menuColorPoint.Y)/1.5),
@@ -1024,7 +1510,7 @@ void renderLumen() {
                         drawQuad(4,4);
                         aa=(mov.X+78)/(78*2.0);
                         if(aa < 0.15) aa=0.1;
-                        currentThickness=0.2+((mov.Y+78)/(78*2.0))*1.75;
+                        currentThickness=0.5+((mov.Y+78)/(78*2.0))*1.75;
                     }
                     
                 glPopMatrix();   
@@ -1041,17 +1527,22 @@ void renderLumen() {
         menuScrollDown = false;        
         
         //glDisable(GL_BLEND);
-        if(currentUser == -1) {
-            glColor4f(1,0,0,1);
-        } else {
-            glColor4f(rr,gg,bb,aa);
-        }
         if(drawSquare) {
+            int off = 3;
+            glColor4f(0.1,0.1,0.1,0.8);
             glBegin(GL_QUADS);
-            glVertex3f(5,50, 0.0);
-            glVertex3f(50,50, 0.0);
-            glVertex3f(50,5, 0.0);
-            glVertex3f(5,5, 0.0);
+            glVertex3f(10-off,70+off, 0.0);
+            glVertex3f(70+off,70+off, 0.0);
+            glVertex3f(70+off,10-off, 0.0);
+            glVertex3f(10-off,10-off, 0.0);
+            glEnd();
+
+            glColor4f(rr,gg,bb,aa);
+            glBegin(GL_QUADS);
+            glVertex3f(10,70, 0.0);
+            glVertex3f(70,70, 0.0);
+            glVertex3f(70,10, 0.0);
+            glVertex3f(10,10, 0.0);
             glEnd();
         }
         glColor4f(1,1,1,1);
@@ -1061,6 +1552,9 @@ void renderLumen() {
         glEnable(GL_DEPTH_TEST);
     }
 
+    if(firstRender) {
+        fprintf(stderr, "First render done.\n");
+    }
     firstRender = false;
     glutSwapBuffers();
 }

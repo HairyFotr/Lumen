@@ -2,7 +2,7 @@
 	<Licenses>
 		<License vendor="PrimeSense" key="0KOIk2JeIBYClPWVnMoRKn5cdY4="/>
 	</Licenses>
-	<Log writeToFile="false" writeToConsole="true">
+	<Log writeToFile="false" writeToConsole="false">
 		<!-- 0 - Verbose, 1 - Info, 2 - Warning, 3 - Error (default) -->
 		<LogLevel value="3"/>
 		<Masks>
