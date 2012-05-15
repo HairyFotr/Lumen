@@ -47,6 +47,8 @@ float currentThickness=0.9;
 int currentBrush = 0;
 int testNum = 0;
 
+time_t clickTimer;
+
 XnUInt32 currentUser = -1;
 
 
@@ -69,6 +71,7 @@ void XN_CALLBACK_TYPE User_LostUser(xn::UserGenerator& generator, XnUserID nId, 
     if(nId == currentUser) {
         currentUser = -1;
         userIsLost = true;
+        clickTimer = time(0);
         
         /*XnUserID aUsers[15];
         XnUInt16 nUsers = 15;
@@ -218,6 +221,7 @@ void glutKeyboard(unsigned char key, int x, int y) {
 float rr=0,gg=0,bb=0,aa=0.75;
 void processMouse(int button, int state, int x, int y) {
     if(state == GLUT_DOWN) {
+        clickTimer = time(0);
         //printf("%d\n", button);
         if(button == GLUT_LEFT_BUTTON) {
             isMouseDown = TRUE;
@@ -335,6 +339,7 @@ void ctrlChandler(int s){
 
 int main(int argc, char** argv) {
     srand(time(NULL));
+    clickTimer = time(0);
     #define LUMEN_TRACKER
     #define LUMEN_TRACKER_USE
     #ifdef LUMEN_TRACKER

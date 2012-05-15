@@ -26,7 +26,7 @@ void glutIdle(void) {
 }
 
 void processKeyboard(unsigned char key, int x, int y) {
-    if(key==53) exit(1); // "5" :)
+    if(key==53) exit(77); // "5" :)
     if(key==27 || key==13) exit(0);
 }
 

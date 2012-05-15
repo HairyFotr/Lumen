@@ -37,6 +37,8 @@ extern xn::Context g_Context;
 extern xn::UserGenerator g_UserGenerator;
 extern xn::DepthGenerator g_DepthGenerator;
 
+extern time_t clickTimer;
+
 extern int testNum;
 extern int quitRequested;
 extern bool drawSkeleton;
@@ -401,7 +403,8 @@ double constrain(double x, double a, double b){
 
 #define Kp_ROLLPITCH 0.02
 #define Ki_ROLLPITCH 0.00002
-#define Kp_YAW 1.2
+//#define Kp_YAW 1.2
+#define Kp_YAW 3.5
 #define Ki_YAW 0.00002
 
 void Drift_correction(void)
@@ -809,6 +812,8 @@ XnPoint3D convertGlasses(XnPoint3D in) {
     return out;
 }
 
+bool hadKinect = false;
+
 float maxX=-10000, minX=+10000;
 int cnt = 0;
 void renderLumen() {
@@ -1085,7 +1090,7 @@ void renderLumen() {
         XnPoint3D hand0 = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_HAND);
         XnPoint3D elbow0 = GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_ELBOW);
         //hand0 = Vec3::makeLonger(elbow0, hand0, -100);
-        hand0 = Vec3::makeLonger(elbow0, hand0, -120);
+        hand0 = Vec3::makeLonger(elbow0, hand0, -115);
 
         XnPoint3D hand0proj = getProj(hand0);
         
@@ -1550,6 +1555,13 @@ void renderLumen() {
         
         glEnable(GL_LIGHTING);
         glEnable(GL_DEPTH_TEST);
+        hadKinect = true;
+    } else {
+        if(hadKinect && time(0)-15 > clickTimer) {
+            quitRequested = 1;
+        } else if(!hadKinect && time(0)-45 > clickTimer) {
+            quitRequested = 1;
+        }
     }
 
     if(firstRender) {

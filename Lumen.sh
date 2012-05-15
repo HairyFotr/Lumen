@@ -30,10 +30,11 @@ then
 fi
 
 cnt=0
+cnt2=0 #reboot count
 
 runLumen() {
     clear
-    echo "Password is lumen :)"
+    #echo "Password is lumen :)"
 	sudo chmod +r /dev/hidraw2
 	if [ "$?" == "0" ]
 	then
@@ -47,11 +48,20 @@ runLumen() {
                 cnt=0
 	            openbox --restart
 	            #clear
-	            echo "If you can read this, and it's been here a while, please restart the computer."
-	            echo " press ctrl-alt-f1, write lumen enter lumen then ctrl+alt+del :)"
-	            sleep 2
+	            #echo "If you can read this, and it's been here for a while, please reset the computer."
+	            #echo " press ctrl-alt-f1, write lumen enter lumen then ctrl+alt+del :)"
+	            let "cnt2+=1"
+	            if [ $cnt2 -gt 5 ] 
+	            then
+	                echo "Rebooting in 5 seconds..."
+	                sleep 6
+	                sudo reboot
+                fi
+	            sleep 3
             fi
 	        runLumen
+        else
+            cnt2=0
 	    fi
 	else
 	    runLumen
@@ -68,7 +78,7 @@ do
     # Splash screen
     cd splash
     ./LumenSplash
-    if [ "$?" != "0" ]
+    if [ "$?" == "77" ]
     then
        exit
     fi
