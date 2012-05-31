@@ -337,7 +337,16 @@ void ctrlChandler(int s){
    quitRequested = 1;
 }
 
+char* trackerDevice;
+
 int main(int argc, char** argv) {
+    if(argc == 1) {
+        fprintf(stderr, "No device set\n");
+        return 1;
+    } else {
+        trackerDevice = argv[1];
+    }
+    
     srand(time(NULL));
     clickTimer = time(0);
     #define LUMEN_TRACKER
@@ -353,7 +362,7 @@ int main(int argc, char** argv) {
 
     XnStatus nRetVal = XN_STATUS_OK;
     
-    if(argc > 1) {
+    /*if(argc > 1) {
         nRetVal = g_Context.Init();
         CHECK_RC(nRetVal, "Init");
         nRetVal = g_Context.OpenFileRecording(argv[1], g_Player);
@@ -361,7 +370,7 @@ int main(int argc, char** argv) {
             printf("Can't open recording %s: %s\n", argv[1], xnGetStatusString(nRetVal));
             return 2;
         }
-    } else {
+    } else */{
         xn::EnumerationErrors errors;
         nRetVal = g_Context.InitFromXmlFile(SAMPLE_XML_PATH, g_ScriptNode, &errors);
         if(nRetVal == XN_STATUS_NO_NODE_PRESENT) {

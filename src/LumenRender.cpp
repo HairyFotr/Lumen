@@ -284,7 +284,7 @@ void Matrix_Multiply(double a[3][3], double b[3][3],double mat[3][3])
       mat[x][y]=0;
       mat[x][y]=op[0]+op[1]+op[2];
       
-      double test=mat[x][y];
+      //double test=mat[x][y];
     }
   }
 }
@@ -623,10 +623,11 @@ void firstRead() {
     }
 }
 
+extern char* trackerDevice;
 void initTracker() {
     if(!trackerInit) {
         fprintf(stderr, "Tracker init started.\n");
-        tracker.open("/dev/hidraw2", ios::in|ios::binary);
+        tracker.open(trackerDevice, ios::in|ios::binary);
         #ifdef LUMEN_TRACKER_USE 
         firstReadThread = boost::thread(firstRead);
         #endif
@@ -635,7 +636,7 @@ void initTracker() {
 #endif
 
 SmoothPoint *headpos;
-SmoothPoint *shoulderLeft, *shoulderRight;
+//SmoothPoint *shoulderLeft, *shoulderRight;
 SmoothPoint *lastPosition, *lastPositionProj;
 extern bool drawingLine;
 extern bool cancelLine;
@@ -1002,7 +1003,8 @@ void renderLumen() {
               0, 0, -1);// up vector 
     
     glMultMatrixd(GL_MatrixT);
-    glRotatef(188,0,0,1);
+    //glRotatef(188,0,0,1);
+    glRotatef(testNum,0,0,1);
     glRotatef(-5,0,1,0);
     
     if(headpos != NULL) {
@@ -1100,8 +1102,8 @@ void renderLumen() {
         elbowproj = convertKinect(elbowproj);
 
         if(firstUser) {
-            lastPosition = new SmoothPoint(hand, 20, 1);
-            lastPositionProj = new SmoothPoint(handproj, 20, 1);
+            lastPosition = new SmoothPoint(hand, 15, 1);
+            lastPositionProj = new SmoothPoint(handproj, 15, 1);
         } else {
             lastPosition->insert(hand);
             lastPositionProj->insert(handproj);
@@ -1215,17 +1217,17 @@ void renderLumen() {
         }
 
         XnPoint3D head = getProj(GetLimbPosition(aUsers[i], XN_SKEL_HEAD));
-        XnPoint3D sh1 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_LEFT_SHOULDER));
-        XnPoint3D sh2 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_SHOULDER));
+        //XnPoint3D sh1 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_LEFT_SHOULDER));
+        //XnPoint3D sh2 = getProj(GetLimbPosition(aUsers[i], XN_SKEL_RIGHT_SHOULDER));
         if(firstUser) {
-            headpos = new SmoothPoint(head, 50, 0);
+            headpos = new SmoothPoint(head, 25, 0);
             //printf("headpos (%1.2f,%1.2f,%1.2f)\n",  headpos->X(),headpos->Y(),headpos->Z());
-            shoulderLeft = new SmoothPoint(sh1, 20, 1);
-            shoulderRight = new SmoothPoint(sh2, 20, 1);
+            //shoulderLeft = new SmoothPoint(sh1, 20, 1);
+            //shoulderRight = new SmoothPoint(sh2, 20, 1);
         } else {
             headpos->insert(head);
-            shoulderLeft->insert(sh1);
-            shoulderRight->insert(sh2);
+            //shoulderLeft->insert(sh1);
+            //shoulderRight->insert(sh2);
         }
         firstUser = false;
     

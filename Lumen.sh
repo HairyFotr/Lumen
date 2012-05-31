@@ -3,15 +3,15 @@
 echo "Password is lumen :)"
 sudo echo "LUMEN!"
 
-if [ "$1" == "build" ]
-then
+#if [ "$1" == "build" ]
+#then
 	cd src
 	make clean
 	cd ..
 	cd splash
 	rm LumenSplash
 	cd ..
-fi
+#fi
 
 out="0"
 if [ ! -f bin/x86-Release/Lumen ]
@@ -33,12 +33,12 @@ cnt=0
 cnt2=0 #reboot count
 
 runLumen() {
-    clear
     #echo "Password is lumen :)"
-	sudo chmod +r /dev/hidraw2
+	hidraw="/dev/$( realpath /sys/class/hidraw/hidraw* | grep 014B | grep -o hidraw[0-9]$ )"
+	sudo chmod +r $hidraw
 	if [ "$?" == "0" ]
 	then
-	    ./Lumen #2> /dev/null
+	    ./Lumen $hidraw #2> /dev/null
 	    if [ "$?" != "1" ]
 	    then
             let "cnt+=1"
@@ -68,21 +68,20 @@ runLumen() {
 	fi
 }
 
-while :
-do
+#while :
+#do
     # Run lumen
 	cd bin/x86-Release
 	runLumen
 	cd ../..
-    
+
     # Splash screen
-    cd splash
-    ./LumenSplash
-    if [ "$?" == "77" ]
-    then
-       exit
-    fi
-    cd ..
-    clear
-done
+    #cd splash
+    #./LumenSplash
+    #if [ "$?" == "77" ]
+    #then
+    #   exit
+    #fi
+    #cd ..
+#done
 
