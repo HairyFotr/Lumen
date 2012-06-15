@@ -1,0 +1,30 @@
+#!/bin/bash
+
+project="Lumen"
+arch="x64"
+
+# make project
+cd src
+make clean
+make
+out=$?
+cd ..
+if [ $out != 0 ]; then exit; fi
+    
+tries=5
+while [ $tries -gt 0 ]; do
+    # attempt to detect the hidraw of Vuzix Wrap 920 AR
+    hidraw="/dev/$( realpath /sys/class/hidraw/hidraw* | grep 1BAE:014B | grep -o hidraw[0-9]$ )"
+    if [ "$hidraw" != "/dev/" ]; then
+        sudo chmod +r $hidraw
+        if [ $? == 0 ];	then 
+            cd bin/$arch-Release
+            ./$project $hidraw 
+            cd ../..
+            break
+        fi
+    fi
+    echo "Attempting glasses detection"
+    sleep 2
+    let tries-=1
+done

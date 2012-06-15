@@ -1,1 +1,42 @@
-Drawing in augmented reality.
+--------------------------------------
+ LUMEN - Drawing in augmented reality
+--------------------------------------
+ by Dominik Mahnič and Matic Potočnik
+
+Hardware stuff used:
+    Microsoft Kinect sensor (probably anything OpenNI-compatible goes)
+    Vuzix Wrap 920AR 3D glasses (tracker code is pretty hacky and hardcoded to it)
+    
+Software stuff used:
+    Ubuntu, OpenNI, OpenCV, OpenGL, ...
+
+How to build?
+    You maybe need these (OpenCV, Boost threads, realpath (for glasses detection), OpenNI prereqs):
+        sudo apt-get install libcv-dev libopencv-dev libboost-thread-dev realpath g++ python libusb-1.0-0-dev freeglut3-dev
+
+    Install OpenNI, SensorKinect, NITE Middleware
+        http://75.98.78.94/Downloads/OpenNIModules.aspx
+        https://github.com/avin2/SensorKinect/tree/unstable/Bin
+        
+    Also put OpenNI in lib/OpenNI ... check src/Makefile
+
+    Check run script if $arch and stuff looks good.
+    
+    OK, it should build...
+    
+Now what?
+    The code is ugly, and there are a lot of magical numbers for
+    you to play with, but the first one you'll want to set is
+    the angle correction around line 1000 - glasses heading
+    goes towards North, but should go towards Kinect.
+    
+TODO:
+    Major cleanup and compartmentalization :)
+    Automatic kinect-tracker calibration
+    Try it on different hardware
+    Saving and screenshots
+    Better graphics
+    License stuffs:
+        Yeah, we should get this in order.
+        It'll be LGPL, like the DCM algorithm
+        we used, and the OpenNI example we built from

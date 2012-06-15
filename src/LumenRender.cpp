@@ -179,7 +179,7 @@ double* normalBlock = new double[12];
 double HiGyroMulti = (1/4.333333333333)*(M_PI/180.0);
 
 #define GRAVITY 256
-
+//TODO: too many magic numbers :)
 double multi[12] = {
     3.7037037037037037/1000, 3.3003300330033003/1000, 3.389830508474576/1000, 
     1*GRAVITY,1*GRAVITY,1*GRAVITY, 
@@ -1003,6 +1003,7 @@ void renderLumen() {
               0, 0, -1);// up vector 
     
     glMultMatrixd(GL_MatrixT);
+    // Angle correction
     //glRotatef(188,0,0,1);
     glRotatef(testNum,0,0,1);
     glRotatef(-5,0,1,0);

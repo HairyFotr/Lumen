@@ -14,4 +14,4 @@ LDFLAGS += `pkg-config --libs opencv` -lboost_thread-mt
 
 LIB_DIRS += /usr/lib
 
-include ../lib/OpenNI-Bin-Dev-Linux-x86-v1.5.2.23/Samples/Build/Common/CommonCppMakefile
+include ../lib/OpenNI/Samples/Build/Common/CommonCppMakefile
