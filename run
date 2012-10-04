@@ -3,6 +3,8 @@
 project="Lumen"
 arch="x64"
 
+bold() { tput bold; echo $@; tput sgr0; }
+
 # make project
 cd src
 make clean
@@ -10,21 +12,70 @@ make
 out=$?
 cd ..
 if [ $out != 0 ]; then exit; fi
+
+# make splash screen
+cd splash
+#make clean
+make
+out=$?
+cd ..
+if [ $out != 0 ]; then exit; fi
     
-tries=5
-while [ $tries -gt 0 ]; do
-    # attempt to detect the hidraw of Vuzix Wrap 920 AR
-    hidraw="/dev/$( realpath /sys/class/hidraw/hidraw* | grep 1BAE:014B | grep -o hidraw[0-9]$ )"
-    if [ "$hidraw" != "/dev/" ]; then
-        sudo chmod +r $hidraw
-        if [ $? == 0 ];	then 
-            cd bin/$arch-Release
-            ./$project $hidraw 
-            cd ../..
-            break
+runLumen() {
+    echo 
+    fails=0
+    fails2=0
+    while :
+    do
+        sleep 2
+        clear
+        # attempt to detect the hidraw of Vuzix Wrap 920 AR
+        hidraw="/dev/$( realpath /sys/class/hidraw/hidraw* | grep 1BAE:014B | grep -o hidraw[0-9]$ )"
+        if [ "$hidraw" != "/dev/" ]; then
+            sudo chmod +r $hidraw
+            if [ "$?" == "0" ];	then
+                bold "Starting Lumen..."
+                cd bin/$arch-Release
+                ./$project $hidraw #&>> ../../lumen.log
+        	    if [ "$?" != "1" ]; then
+        	        bold "Starting Lumen failed... (check camera and Kinect connections)"
+                    let "fails+=1"
+                    if [ $fails -gt 3 ]; then
+                        let "fails2+=1"
+                        if [ $fails2 -gt 3 ]; then
+                            echo
+	                        bold "We have a problem. Rebooting now... that should fix it."
+	                        bold "Unfortunately this happens once in a while."
+	                        sleep 7
+	                        sudo reboot
+                        fi
+
+                        bold "Attempting to recover graphics"
+                        sleep 1
+                        openbox --restart
+                    fi
+                else
+                    cd ../..
+                    break
+                fi
+                cd ../..
+            fi
+        else
+            bold "Attempting connection to 3D glasses... (check glasses connections)"
         fi
-    fi
-    echo "Attempting glasses detection"
-    sleep 2
-    let tries-=1
+    done
+}
+
+while :
+do
+    # Run lumen
+    runLumen
+
+    # Splash screen
+    echo
+    bold Starting Splash...
+    cd splash
+    ./LumenSplash
+    if [ "$?" == "77" ]; then exit; fi # press "5" in splash to get out of here ;)
+    cd ..
 done
