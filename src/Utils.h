@@ -5,8 +5,9 @@
     clock_t getTime();
     clock_t getTimeSince(clock_t sincetime);
 
-    float rand01();
+    float randFloat();
     int randInt(int lim);
+    int randInt();
     void randomColor(float& r, float& g, float& b);
 
 #endif

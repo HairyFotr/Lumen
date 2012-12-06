@@ -202,7 +202,7 @@ public:
             glColor4f(r, g, b, a);
 
             //brush override
-            if(bbrush==-2) brush = (int)(rand01()*3); 
+            if(bbrush==-2) brush = (int)(randFloat()*3); 
             else if(bbrush!=-1) brush = bbrush;
 
             // Two-pass rendering - front/back

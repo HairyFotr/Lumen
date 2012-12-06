@@ -2,27 +2,34 @@
  LUMEN - Drawing in augmented reality
 --------------------------------------
  by Dominik Mahnič and Matic Potočnik
+ produced by: LJUDMILA
+ coproduced by: Computer Vision Laboratory, FRI
 
-Hardware stuff used:
+Hardware used:
     Microsoft Kinect sensor (probably anything OpenNI-compatible goes)
-    Vuzix Wrap 920AR 3D glasses (tracker code is pretty hacky and hardcoded to it)
+    Vuzix Wrap 920AR 3D glasses (tracker code is pretty hacky and hardcoded)
     
-Software stuff used:
-    Ubuntu, OpenNI, OpenCV, OpenGL, ...
+Software used:
+    OpenNI, OpenCV, OpenGL, ...
 
 How to build?
-    You maybe need these (OpenCV, Boost threads, realpath (for glasses detection), OpenNI prereqs):
-        sudo apt-get install libcv-dev libopencv-dev libboost-thread-dev realpath g++ python libusb-1.0-0-dev freeglut3-dev
+    Install these (OpenCV, Boost threads, OpenNI prereqs):
+        sudo apt-get install libcv-dev libopencv-dev libboost-thread-dev 
+        sudo apt-get install realpath g++ python libusb-1.0-0-dev freeglut3-dev
 
-    Install OpenNI, SensorKinect, NITE Middleware
-        http://75.98.78.94/Downloads/OpenNIModules.aspx
-        https://github.com/avin2/SensorKinect/tree/unstable/Bin
-        
-    Also put OpenNI in lib/OpenNI ... check src/Makefile
-
-    Check run script if $arch and stuff looks good.
+    Download OpenNI, SensorKinect, NITE Middleware:
+        OpenNI and NITE:
+            http://openni.org/Downloads/OpenNIModules.aspx
+        SensorKinect:
+            https://github.com/avin2/SensorKinect/tree/unstable/Bin
     
-    OK, it should build...
+    Now extract these and run sudo ./install in all three
+        
+    Move the extracted OpenNI folder to lib/OpenNI (check src/Makefile)
+
+    Check if $arch in the run script is the right one for your linux.
+    
+    OK, it should now build and start with ./run
     
 Now what?
     The code is ugly, and there are a lot of magical numbers for
@@ -31,12 +38,14 @@ Now what?
     goes towards North, but should go towards Kinect.
     
 TODO:
-    Major cleanup and compartmentalization :)
-    Automatic kinect-tracker calibration
-    Try it on different hardware
+    Driver for Vuzix Wrap 920AR (check wrap920AR/)
+    Major cleanup and modularization
+    Automatic Kinect-Tracker calibration
+    Try it out on different hardware
     Saving and screenshots
-    Better graphics
-    License stuffs:
-        Yeah, we should get this in order.
-        It'll be LGPL, like the DCM algorithm
-        we used, and the OpenNI example we built from
+    Better graphics (use a game engine perhaps)
+
+License stuff:
+    Yeah, we should get this in proper order.
+    It's LGPL, like the DCM algorithm we used, 
+    and the OpenNI example we built this upon.

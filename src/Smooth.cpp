@@ -48,23 +48,6 @@ public:
         delete [] log;
     }
 };
-/*class SmoothData { //lowpass
-    float val;
-    float alp;
-public:
-    SmoothData(float elt, int len, int last) {
-        alp = 0.05;
-        val = elt;
-    }
-    
-    void insert(float elt) {
-        val = val*(1-alp) + elt*alp;
-    }
-    
-    float get() {
-        return val;
-    }
-};*/
 
 class SmoothPoint {
     SmoothData *x,*y,*z;

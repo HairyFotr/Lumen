@@ -303,39 +303,37 @@ double yaw=0;
 
 double MAG_Heading;
 
-double Accel_Vector[3]= {0,0,0}; //Store the acceleration in a vector
-double Gyro_Vector[3]= {0,0,0};//Store the gyros turn rate in a vector
-double Omega_Vector[3]= {0,0,0}; //Corrected Gyro_Vector data
-double Omega_P[3]= {0,0,0};//Omega Proportional correction
-double Omega_I[3]= {0,0,0};//Omega Integrator
-double Omega[3]= {0,0,0};
+double Accel_Vector[3] = {0,0,0}; //Store the acceleration in a vector
+double Gyro_Vector[3] = {0,0,0};//Store the gyros turn rate in a vector
+double Omega_Vector[3] = {0,0,0}; //Corrected Gyro_Vector data
+double Omega_P[3] = {0,0,0};//Omega Proportional correction
+double Omega_I[3] = {0,0,0};//Omega Integrator
+double Omega[3] = {0,0,0};
 
-double errorRollPitch[3]= {0,0,0};
+double errorRollPitch[3] = {0,0,0};
 
-double errorYaw[3]= {0,0,0};
+double errorYaw[3] = {0,0,0};
 
-double DCM_Matrix[3][3]= {
-  {
-    1,0,0  }
-  ,{
-    0,1,0  }
-  ,{	
-    0,0,1  }
+double DCM_Matrix[3][3] = {
+  { 1,0,0 },
+  { 0,1,0 },
+  { 0,0,1 }
 }; 
-double Update_Matrix[3][3]={{0,1,2},{3,4,5},{6,7,8}}; //Gyros here
+double Update_Matrix[3][3] = {
+  { 0,1,2 },
+  { 3,4,5 },
+  { 6,7,8 }
+}; //Gyros here
 
 
-double Temporary_Matrix[3][3]={
-  {
-    0,0,0  }
-  ,{
-    0,0,0  }
-  ,{
-    0,0,0  }
+double Temporary_Matrix[3][3] = {
+  { 0,0,0 },
+  { 0,0,0 },
+  { 0,0,0 }
 };
 
-double GL_Matrix[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-double GL_MatrixT[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+double GL_Matrix[16]  = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+double GL_MatrixT[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
 
 void Compass_Heading() {
   double MAG_X;

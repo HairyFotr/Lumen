@@ -20,9 +20,9 @@ make
 out=$?
 cd ..
 if [ $out != 0 ]; then exit; fi
-    
+
 runLumen() {
-    echo 
+    echo
     fails=0
     fails2=0
     while :
@@ -66,16 +66,16 @@ runLumen() {
     done
 }
 
-while :
-do
+#while :
+#do
     # Run lumen
     runLumen
 
     # Splash screen
-    echo
-    bold Starting Splash...
-    cd splash
-    ./LumenSplash
-    if [ "$?" == "77" ]; then exit; fi # press "5" in splash to get out of here ;)
-    cd ..
-done
+    #echo
+    #bold Starting Splash...
+    #cd splash
+    #./LumenSplash
+    #if [ "$?" == "77" ]; then exit; fi # press "5" in splash to get out of here ;)
+    #cd ..
+#done
